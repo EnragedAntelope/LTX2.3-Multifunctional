@@ -19,12 +19,14 @@ def resolve_ltx_path():
     os.makedirs(sc_dir, exist_ok=True)
     lnk_files = glob.glob(os.path.join(sc_dir, "*.lnk"))
     if not lnk_files:
-        print("\033[91m[ERROR] 未在 LTX_Shortcut 文件夹中找到快捷方式！\n请打开程序目录下的 LTX_Shortcut 文件夹，并将官方 LTX Desktop 的快捷方式复制进去后重试。\033[0m")
+        print("\033[91m[ERROR] No shortcut found in LTX_Shortcut folder!")
+        print("Please copy the official LTX Desktop shortcut into the LTX_Shortcut folder and try again.\033[0m")
         sys.exit(1)
         
     lnk_path = lnk_files[0]
-    # 使用 VBScript 解析快捷方式，兼容所有 Windows 系统
-    vbs_code = f'''Set sh = CreateObject("WScript.Shell")\nSet obj = sh.CreateShortcut("{os.path.abspath(lnk_path)}")\nWScript.Echo obj.TargetPath'''
+    # Use VBScript to resolve shortcut target, compatible with all Windows versions
+    safe_path = os.path.abspath(lnk_path).replace('"', '""')
+    vbs_code = f'''Set sh = CreateObject("WScript.Shell")\nSet obj = sh.CreateShortcut("{safe_path}")\nWScript.Echo obj.TargetPath'''
     fd, vbs_path = tempfile.mkstemp(suffix='.vbs')
     with os.fdopen(fd, 'w') as f:
         f.write(vbs_code)
@@ -46,13 +48,13 @@ def resolve_ltx_path():
         for p in default_paths:
             if os.path.exists(p):
                 target_exe = p
-                print(f"\033[96m[INFO] 自动检测到 LTX 原版安装路径: {p}\033[0m")
+                print(f"\033[96m[INFO] Auto-detected LTX Desktop install path: {p}\033[0m")
                 found = True
                 break
         
         if not found:
-            print(f"\033[91m[ERROR] 未能找到原版 LTX Desktop 的安装路径！\033[0m")
-            print("请清理 LTX_Shortcut 文件夹，并将您当前电脑上真正的原版快捷方式重贴复制进去。")
+            print(f"\033[91m[ERROR] Could not find LTX Desktop installation!\033[0m")
+            print("Please clear the LTX_Shortcut folder and copy your actual LTX Desktop shortcut into it.")
             sys.exit(1)
         
     return os.path.dirname(target_exe)
@@ -68,12 +70,14 @@ UI_FILE_NAME = "UI/index.html"
 
 # 环境致命检测：如果官方 Python 还没解压释放，立刻强制中断整个程序
 if not os.path.exists(PYTHON_EXE):
-    print(f"\n\033[1;41m [致命错误] 您的电脑上尚未配置好 LTX 的官方渲染核心框架！ \033[0m")
-    print(f"\033[93m此应用仅是 UI 图形控制台，必需依赖原版软件环境才能生成。在 ({PYTHON_EXE}) 未找到运行引擎。\n")
-    print(">> 解决方案：\n1. 请先在您的电脑上正常安装【LTX Desktop 官方原版软件】。")
-    print("2. 必需：双击打开运行一次原版软件！（运行后原版软件会在后台自动释放环境）")
-    print("3. 把原版软件的快捷方式复制到本文档的 LTX_Shortcut 文件夹里面。")
-    print("4. 全部完成后，再重新启动本 run.bat 脚本即可！\033[0m\n")
+    print(f"\n\033[1;41m [FATAL] LTX Desktop rendering engine not found! \033[0m")
+    print(f"\033[93mThis app is a UI frontend and requires the official LTX Desktop environment.")
+    print(f"Engine not found at: {PYTHON_EXE}\n")
+    print(">> Solution:")
+    print("1. Install the official LTX Desktop software on your computer.")
+    print("2. Run the official app at least once (it sets up the backend environment).")
+    print("3. Copy the official app's shortcut into the LTX_Shortcut folder.")
+    print("4. Then restart this run.bat script!\033[0m\n")
     os._exit(1)
 
 # 2. 从目录读取改动过的 Python 文件 (热修复拦截器)
@@ -130,13 +134,13 @@ def check_port_in_use(port):
 def launch_backend():
     """启动核心引擎 - 监听 0.0.0.0 确保局域网可调"""
     if check_port_in_use(3000):
-        print(f"\n\033[1;41m [致命错误] 3000 端口已被占用，无法启动核心引擎！ \033[0m")
-        print("\033[93m>> 绝大多数情况下，这是因为【官方原版 LTX Desktop】正在您的电脑后台运行。\033[0m")
-        print(">> 冲突会导致显存爆炸。请检查右下角系统托盘图标，右键完全退出官方软件。")
-        print(">> 退出后重新双击 run.bat 启动本程序！\n")
+        print(f"\n\033[1;41m [FATAL] Port 3000 is already in use! \033[0m")
+        print("\033[93m>> Most likely the official LTX Desktop is running in the background.\033[0m")
+        print(">> This will cause VRAM conflicts. Check system tray, right-click and quit the official app.")
+        print(">> Then restart run.bat!\n")
         os._exit(1)
 
-    print(f"\033[96m[CORE] 核心引擎正在启动...\033[0m")
+    print(f"\033[96m[CORE] Starting rendering engine...\033[0m")
     # 只开启重要级别的 Python 应用层日志，去除无用的 HTTP 刷屏
     import logging as _logging
     _logging.basicConfig(
@@ -176,8 +180,8 @@ if __name__ == '__main__':
     env = os.environ.copy()
     result = subprocess.run(cmd, cwd=BACKEND_DIR, env=env)
     if result.returncode != 0:
-        print(f"\n\033[1;41m [致命错误] 核心引擎异常崩溃退出！ (Exit Code: {result.returncode})\033[0m")
-        print(">> 请检查上述终端报错信息。确认显卡驱动是否正常。")
+        print(f"\n\033[1;41m [FATAL] Rendering engine crashed! (Exit Code: {result.returncode})\033[0m")
+        print(">> Check the error messages above. Verify your GPU drivers are working correctly.")
         os._exit(1)
 
 ui_app = FastAPI()
@@ -202,9 +206,9 @@ async def serve_i18n():
 
 
 def launch_ui_server():
-    print(f"\033[92m[UI] 工作站已就绪！\033[0m")
-    print(f"\033[92m[LOCAL] 本机访问: http://127.0.0.1:4000\033[0m")
-    print(f"\033[93m[WIFI]  局域网访问: http://{LAN_IP}:4000\033[0m")
+    print(f"\033[92m[UI] Workstation ready!\033[0m")
+    print(f"\033[92m[LOCAL] http://127.0.0.1:4000\033[0m")
+    print(f"\033[93m[LAN]   http://{LAN_IP}:4000\033[0m")
     
     # 彻底压制 WinError 10054 (客户端强制断开) 的底层警告报错
     if sys.platform == 'win32':
@@ -239,7 +243,7 @@ if __name__ == "__main__":
     threading.Thread(target=launch_backend, daemon=True).start()
     
     # 强制校验 3000 端口是否存活
-    print("\033[93m[SYS] 正在等待内部核心 3000 端口启动...\033[0m")
+    print("\033[93m[SYS] Waiting for backend on port 3000...\033[0m")
     backend_ready = False
     for _ in range(30):
         try:
@@ -252,11 +256,11 @@ if __name__ == "__main__":
         time.sleep(1)
         
     if backend_ready:
-        print("\033[92m[SYS] 3000 端口已通过连通性握手验证！后端装载成功。\033[0m")
+        print("\033[92m[SYS] Port 3000 verified! Backend loaded successfully.\033[0m")
     else:
-        print("\033[1;41m [崩坏警告] 等待 30 秒后，3000 端口依然无法连通！ \033[0m")
-        print(">> Uvicorn 可能在后台陷入了死锁，或者被防火墙拦截，前端大概率将无法连接到后端！")
-        print(">> 请检查上方是否有 Python 报错。\n")
+        print("\033[1;41m [WARNING] Port 3000 not responding after 30 seconds! \033[0m")
+        print(">> The backend may be deadlocked or blocked by a firewall.")
+        print(">> Check the error messages above.\n")
         
     try:
         launch_ui_server()

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(xargs wc:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(grep -r \"C:\\\\\\\\Users\\\\\\\\1-xuanran\" /c/github_projects/LTX2.3-Multifunctional --include=\"*.py\" --include=\"*.js\" --include=\"*.bat\")",
+      "WebFetch(domain:raw.githubusercontent.com)"
+    ]
+  }
+}

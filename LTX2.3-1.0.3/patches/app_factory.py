@@ -475,7 +475,7 @@ def create_app(
             lora_dir = body.get("loraDir", "").strip()
 
             settings_file = Path(
-                r"C:\Users\1-xuanran\AppData\Local\LTXDesktop\settings.json"
+                Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local"))) / "LTXDesktop" / "settings.json"
             )
             import json
 
@@ -502,7 +502,7 @@ def create_app(
             import json
 
             settings_file = Path(
-                r"C:\Users\1-xuanran\AppData\Local\LTXDesktop\settings.json"
+                Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local"))) / "LTXDesktop" / "settings.json"
             )
             if settings_file.exists():
                 with open(settings_file, "r", encoding="utf-8") as f:
@@ -528,7 +528,7 @@ def create_app(
                 import json
 
                 settings_file = _Path(
-                    r"C:\Users\1-xuanran\AppData\Local\LTXDesktop\settings.json"
+                    Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local"))) / "LTXDesktop" / "settings.json"
                 )
                 if settings_file.exists():
                     with open(settings_file, "r", encoding="utf-8") as f:

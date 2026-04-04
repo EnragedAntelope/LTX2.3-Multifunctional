@@ -2,7 +2,7 @@
 import sys
 import os
 
-patch_dir = r"C:\Users\1-xuanran\Desktop\ltx-TEST\patches"
+patch_dir = os.path.join(os.getcwd(), "patches")
 backend_dir = r"C:\Program Files\LTX Desktop\resources\backend"
 
 # 防御性清除：强行剥离所有的默认 backend_dir 引用

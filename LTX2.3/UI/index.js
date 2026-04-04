@@ -138,6 +138,40 @@
         }
     }
 
+    // Prompt enhancer via LM Studio
+    async function enhancePrompt() {
+        const promptEl = document.getElementById('prompt');
+        const btn = document.getElementById('enhance-prompt-btn');
+        const prompt = promptEl ? promptEl.value.trim() : '';
+        if (!prompt || !btn) return;
+
+        const origText = btn.textContent;
+        btn.textContent = _t('enhancing');
+        btn.disabled = true;
+
+        try {
+            const endpoint = (document.getElementById('lm-studio-url') || {}).value || 'http://localhost:1234/v1/chat/completions';
+            const res = await fetch(`${BASE}/api/system/enhance-prompt`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, endpoint })
+            });
+            const data = await res.json();
+            if (data.status === 'ok' && data.enhanced_prompt) {
+                promptEl.value = data.enhanced_prompt;
+                addLog('Prompt enhanced successfully');
+            } else {
+                addLog('Prompt enhancement failed: ' + (data.error || 'unknown error'));
+            }
+        } catch (e) {
+            addLog('Prompt enhancement error: ' + (e.message || e));
+        } finally {
+            btn.textContent = origText;
+            btn.disabled = false;
+        }
+    }
+    window.enhancePrompt = enhancePrompt;
+
     function updateLoraDropdown() {
         const select = document.getElementById('vid-lora');
         if (!select) return;

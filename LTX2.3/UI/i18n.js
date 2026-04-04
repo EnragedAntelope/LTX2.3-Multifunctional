@@ -155,6 +155,10 @@
             errSingleKfPrompt: '单次多关键帧请至少填写顶部主提示词或本页全局补充词',
             loraNoneLabel: '无',
             modelDefaultLabel: '默认',
+            enhancePrompt: 'AI优化',
+            enhancing: '优化中...',
+            lmStudioEndpoint: 'LM Studio 端点',
+            lmStudioUrlPh: 'http://localhost:1234/v1/chat/completions',
         },
         en: {
             tabVideo: 'Video',
@@ -304,13 +308,17 @@
             errSingleKfNeedPrompt: 'Enter main or page extra prompt for single-pass keyframes.',
             loraNoneLabel: 'none',
             modelDefaultLabel: 'default',
+            enhancePrompt: 'Enhance',
+            enhancing: 'Enhancing...',
+            lmStudioEndpoint: 'LM Studio endpoint',
+            lmStudioUrlPh: 'http://localhost:1234/v1/chat/completions',
             loraPlacementHintWithDir:
                 'Place LoRAs into the default models directory: <code>{dir}</code>\\loras',
         },
     };
 
     function getLang() {
-        return localStorage.getItem(STORAGE_KEY) === 'en' ? 'en' : 'zh';
+        return localStorage.getItem(STORAGE_KEY) === 'zh' ? 'zh' : 'en';
     }
 
     function setLang(lang) {
@@ -334,9 +342,9 @@
 
     function t(key) {
         const L = getLang();
-        const table = STR[L] || STR.zh;
+        const table = STR[L] || STR.en;
         if (Object.prototype.hasOwnProperty.call(table, key)) return table[key];
-        if (Object.prototype.hasOwnProperty.call(STR.zh, key)) return STR.zh[key];
+        if (Object.prototype.hasOwnProperty.call(STR.en, key)) return STR.en[key];
         return key;
     }
 

@@ -45,7 +45,8 @@ from state import init_state_service
 if TYPE_CHECKING:
     from app_handler import AppHandler
 
-# 跨域配置：允许所有来源，解决本地网页调用限制
+# SECURITY: Allows all origins for LAN access (http://{LAN_IP}:4000).
+# This app is designed for local/LAN use only. Restrict if deploying publicly.
 DEFAULT_ALLOWED_ORIGINS: list[str] = ["*"]
 
 
@@ -467,15 +468,63 @@ def create_app(
 
     _LORA_SCAN_SUFFIXES = {".safetensors", ".ckpt", ".pt", ".bin"}
 
+    @app.post("/api/lora-dir")
+    async def route_save_lora_dir(request: Request):
+        """Save custom LoRA directory to settings."""
+        try:
+            body = await request.json()
+            lora_dir = body.get("loraDir", "").strip()
+            import json
+            settings_file = _ltx_desktop_config_dir() / "settings.json"
+            if settings_file.exists():
+                with open(settings_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            else:
+                data = {}
+            data["lora_dir"] = lora_dir
+            data["loraDir"] = lora_dir
+            with open(settings_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            return {"status": "ok", "loraDir": lora_dir}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    @app.get("/api/lora-dir")
+    async def route_get_lora_dir():
+        """Get saved LoRA directory from settings."""
+        try:
+            import json
+            settings_file = _ltx_desktop_config_dir() / "settings.json"
+            if settings_file.exists():
+                with open(settings_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return {"loraDir": data.get("lora_dir", "") or data.get("loraDir", "")}
+            return {"loraDir": ""}
+        except Exception as e:
+            return {"loraDir": "", "error": str(e)}
+
     @app.get("/api/loras")
     async def route_list_loras(request: Request):
-        """扫描本地 LoRA 目录；前端「设置」里填的路径依赖此接口（官方路由可能不存在）。"""
+        """Scan local LoRA directory; the settings UI depends on this endpoint."""
         raw = (request.query_params.get("dir") or "").strip()
         if raw.startswith("True"):
             raw = raw[4:].lstrip()
         raw = raw.strip().strip('"').strip("'")
         if not raw:
-            # 默认规则：LoRA 路径 = 默认 models_dir 下的 `loras` 子目录（规则写死）
+            # Check settings.json for a user-saved lora_dir
+            try:
+                import json
+                settings_file = _ltx_desktop_config_dir() / "settings.json"
+                if settings_file.exists():
+                    with open(settings_file, "r", encoding="utf-8") as f:
+                        settings_data = json.load(f)
+                    custom_lora_dir = settings_data.get("lora_dir", "") or settings_data.get("loraDir", "")
+                    if custom_lora_dir and str(custom_lora_dir).strip():
+                        raw = str(custom_lora_dir).strip()
+            except Exception:
+                pass
+        if not raw:
+            # Fallback: LoRA path = models_dir / loras
             try:
                 md = getattr(handler.pipelines, "models_dir", None)
                 if md:
@@ -505,8 +554,13 @@ def create_app(
             }
 
         found: list[dict[str, str]] = []
+        _MAX_SCAN_DEPTH = 3
+        root_depth = str(root.resolve()).count(os.sep)
         try:
             for dirpath, _dirnames, filenames in os.walk(root):
+                if str(Path(dirpath).resolve()).count(os.sep) - root_depth >= _MAX_SCAN_DEPTH:
+                    _dirnames.clear()
+                    continue
                 for fn in filenames:
                     suf = Path(fn).suffix.lower()
                     if suf in _LORA_SCAN_SUFFIXES:
@@ -577,8 +631,13 @@ def create_app(
             }
 
         found: list[dict[str, str]] = []
+        _MAX_SCAN_DEPTH = 3
+        root_depth = str(root.resolve()).count(os.sep)
         try:
             for dirpath, _dirnames, filenames in os.walk(root):
+                if str(Path(dirpath).resolve()).count(os.sep) - root_depth >= _MAX_SCAN_DEPTH:
+                    _dirnames.clear()
+                    continue
                 for fn in filenames:
                     suf = Path(fn).suffix.lower()
                     if suf in _MODEL_SCAN_SUFFIXES:
@@ -607,9 +666,71 @@ def create_app(
     async def route_serve_file(path: str):
         from fastapi.responses import FileResponse
 
-        if os.path.exists(path):
-            return FileResponse(path)
+        # Security: restrict file serving to the output directory
+        try:
+            resolved = Path(path).resolve()
+            allowed_root = get_dynamic_output_path().resolve()
+            if not str(resolved).startswith(str(allowed_root) + os.sep) and resolved != allowed_root:
+                return JSONResponse(status_code=403, content={"error": "Access denied: path outside output directory"})
+        except (OSError, ValueError):
+            return JSONResponse(status_code=400, content={"error": "Invalid path"})
+
+        if resolved.is_file():
+            return FileResponse(str(resolved))
         return JSONResponse(status_code=404, content={"error": "File not found"})
+
+    @app.post("/api/system/enhance-prompt")
+    async def route_enhance_prompt(request: Request):
+        """Enhance a simple prompt using a local LLM (LM Studio compatible)."""
+        import urllib.request
+        import urllib.error
+        import json as _json
+        from starlette.concurrency import run_in_threadpool
+
+        try:
+            body = await request.json()
+            prompt = body.get("prompt", "").strip()
+            endpoint = body.get("endpoint", "http://localhost:1234/v1/chat/completions").strip()
+
+            if not prompt:
+                return JSONResponse(status_code=400, content={"error": "No prompt provided"})
+
+            system_prompt = (
+                "You are a cinematic video prompt enhancer. Take the user's simple description "
+                "and expand it into a detailed, vivid prompt optimized for AI video generation. "
+                "Include details about lighting, camera angle, movement, atmosphere, and visual style. "
+                "Keep the output under 200 words. Output ONLY the enhanced prompt, no explanations."
+            )
+
+            payload = _json.dumps({
+                "model": body.get("model", ""),
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.7,
+                "max_tokens": 300,
+            }).encode("utf-8")
+
+            def _call_llm():
+                req = urllib.request.Request(
+                    endpoint,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    return _json.loads(resp.read().decode("utf-8"))
+
+            data = await run_in_threadpool(_call_llm)
+            enhanced = data["choices"][0]["message"]["content"].strip()
+            return {"status": "ok", "enhanced_prompt": enhanced}
+        except urllib.error.URLError:
+            return JSONResponse(
+                status_code=503,
+                content={"error": "Cannot connect to LM Studio. Is it running?"},
+            )
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"error": str(e)})
 
     @app.get("/api/system/list-gpus")
     async def route_list_gpus():

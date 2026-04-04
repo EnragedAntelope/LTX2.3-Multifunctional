@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -48,7 +48,10 @@
             </select>
             
             
-            <label style="font-size: 11px; margin-bottom: 6px; margin-top: 12px;" data-i18n="modelLoraSettings">模型与LoRA设置</label>
+            <label style="font-size: 11px; margin-bottom: 6px; margin-top: 12px;" data-i18n="lmStudioEndpoint">LM Studio endpoint</label>
+            <input type="text" id="lm-studio-url" value="http://localhost:1234/v1/chat/completions" style="height: 28px; font-size: 11px; padding: 0 10px; margin-bottom: 12px;" data-i18n-placeholder="lmStudioUrlPh" placeholder="http://localhost:1234/v1/chat/completions">
+
+            <label style="font-size: 11px; margin-bottom: 6px; margin-top: 12px;" data-i18n="modelLoraSettings">Model & LoRA folders</label>
             <div id="lora-placement-hint" style="font-size: 11px; color: var(--text-dim); margin-top: 8px; line-height: 1.4;" data-i18n="loraPlacementHint">
                 </div>
         </div>
@@ -74,8 +77,11 @@
             </div>
         </div>
         
-        <label data-i18n="promptLabel">视觉描述词 (Prompt)</label>
-        <textarea id="prompt" data-i18n-placeholder="promptPlaceholder" placeholder="在此输入视觉描述词 (Prompt)..." style="height: 90px; margin-bottom: 0;"></textarea>
+        <label data-i18n="promptLabel">Prompt</label>
+        <textarea id="prompt" data-i18n-placeholder="promptPlaceholder" placeholder="Describe the scene..." style="height: 90px; margin-bottom: 0;"></textarea>
+        <div style="display: flex; justify-content: flex-end; margin-top: 4px; margin-bottom: 4px;">
+            <button type="button" id="enhance-prompt-btn" onclick="enhancePrompt()" class="btn-outline" style="font-size: 11px; padding: 3px 10px;" data-i18n="enhancePrompt">Enhance</button>
+        </div>
     </div>
 
     <!-- 视频模式选项 -->
