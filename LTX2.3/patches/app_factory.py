@@ -6,19 +6,19 @@ import base64
 import hmac
 import os
 
-# 防 OOM 与显存碎片化补丁：在 torch 初始化之前注入环境变量
+# 防 OOM 与显存碎片化 / Prevent OOM & VRAM fragmentation: inject env var before torch init
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
-import torch  # 提升到顶层导入
+import torch  # 提升到顶层导入 / Hoist to top-level import
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
-from pathlib import Path  # 必须导入，用于处理 Windows 路径
+from pathlib import Path  # Required for Windows path handling
 
 from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ConfigDict
-from fastapi.staticfiles import StaticFiles  # 必须导入，用于挂载静态目录
+from fastapi.staticfiles import StaticFiles  # Required for static directory mount
 from starlette.responses import Response as StarletteResponse
 import shutil
 import tempfile
@@ -414,7 +414,7 @@ def create_app(
             else:
                 if config_file.exists():
                     config_file.unlink()
-            # 立即更新全局 config 控制
+            # 立即更新全局 config / Update global config immediately
             handler.config.outputs_dir = get_dynamic_output_path()
             return {"status": "success", "directory": str(get_dynamic_output_path())}
         except Exception as e:
@@ -429,14 +429,14 @@ def create_app(
         try:
             import subprocess
 
-            # 强制将对话框置顶层：通过 STA 线程 + Topmost 属性，避免被窗口锥入后台
+            # 强制置顶对话框 / Force dialog to top via STA thread + Topmost attribute
             ps_script = (
                 "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;"
                 "[System.Reflection.Assembly]::LoadWithPartialName('System.Drawing') | Out-Null;"
                 "$f = New-Object System.Windows.Forms.FolderBrowserDialog;"
-                "$f.Description = '\u9009\u62e9 LTX \u89c6\u9891\u548c\u56fe\u50cf\u751f\u6210\u7684\u5168\u5c40\u8f93\u51fa\u76ee\u5f55';"
+                "$f.Description = 'Select LTX output folder';"
                 "$f.ShowNewFolderButton = $true;"
-                # 创建一个雐形助手窗口作为 parent 确保对话框在最顶层
+                # 创建助手窗口 / Create helper window as parent to keep dialog on top
                 "$owner = New-Object System.Windows.Forms.Form;"
                 "$owner.TopMost = $true;"
                 "$owner.StartPosition = 'CenterScreen';"
@@ -503,6 +503,46 @@ def create_app(
         except Exception as e:
             return {"loraDir": "", "error": str(e)}
 
+    @app.post("/api/models-dir")
+    async def route_save_models_dir(request: Request):
+        """Save custom models directory and text encoder setting."""
+        try:
+            import json
+            body = await request.json()
+            models_dir = body.get("modelsDir", "").strip()
+            use_local_encoder = body.get("useLocalTextEncoder", True)
+            settings_file = _ltx_desktop_config_dir() / "settings.json"
+            if settings_file.exists():
+                with open(settings_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            else:
+                data = {}
+            if models_dir is not None:
+                data["models_dir"] = models_dir
+            data["use_local_text_encoder"] = bool(use_local_encoder)
+            with open(settings_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            return {"status": "ok", "modelsDir": models_dir, "useLocalTextEncoder": use_local_encoder}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    @app.get("/api/models-dir")
+    async def route_get_models_dir():
+        """Get saved models directory and text encoder setting."""
+        try:
+            import json
+            settings_file = _ltx_desktop_config_dir() / "settings.json"
+            if settings_file.exists():
+                with open(settings_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return {
+                    "modelsDir": data.get("models_dir", ""),
+                    "useLocalTextEncoder": data.get("use_local_text_encoder", True),
+                }
+            return {"modelsDir": "", "useLocalTextEncoder": True}
+        except Exception as e:
+            return {"modelsDir": "", "useLocalTextEncoder": True, "error": str(e)}
+
     @app.get("/api/loras")
     async def route_list_loras(request: Request):
         """Scan local LoRA directory; the settings UI depends on this endpoint."""
@@ -547,7 +587,7 @@ def create_app(
             return {
                 "loras": [],
                 "error": "not_a_directory",
-                "message": "路径不是文件夹或不存在，请检查拼写、盘符与权限",
+                "message": "Path is not a directory or does not exist / 路径不是文件夹或不存在",
                 "path": str(root),
                 "loras_dir": str(root),
                 "models_dir": str(root.parent),
@@ -599,12 +639,25 @@ def create_app(
 
     @app.get("/api/models")
     async def route_list_models(request: Request):
-        """扫描本地 checkpoint 目录；需在官方 models_router 之前注册以覆盖空列表行为。"""
+        """Scan local checkpoint directory; registered before official models_router to override empty list."""
         raw = (request.query_params.get("dir") or "").strip()
         if raw.startswith("True"):
             raw = raw[4:].lstrip()
         raw = raw.strip().strip('"').strip("'")
 
+        if not raw:
+            # Check settings.json for a user-saved custom models_dir
+            try:
+                import json as _json_models
+                _sf = _ltx_desktop_config_dir() / "settings.json"
+                if _sf.exists():
+                    with open(_sf, "r", encoding="utf-8") as _f:
+                        _sd = _json_models.load(_f)
+                    _custom = _sd.get("models_dir", "")
+                    if _custom and str(_custom).strip():
+                        raw = str(_custom).strip()
+            except Exception:
+                pass
         if not raw:
             try:
                 md = getattr(handler.pipelines, "models_dir", None)
@@ -626,7 +679,7 @@ def create_app(
             return {
                 "models": [],
                 "error": "not_a_directory",
-                "message": "路径不是文件夹或不存在，请检查拼写、盘符与权限",
+                "message": "Path is not a directory or does not exist / 路径不是文件夹或不存在",
                 "path": str(root),
             }
 
@@ -685,32 +738,45 @@ def create_app(
         import urllib.request
         import urllib.error
         import json as _json
+        import re as _re
         from starlette.concurrency import run_in_threadpool
 
         try:
             body = await request.json()
             prompt = body.get("prompt", "").strip()
             endpoint = body.get("endpoint", "http://localhost:1234/v1/chat/completions").strip()
+            model = body.get("model", "")
+            context_length = int(body.get("context_length", 4096))
+            temperature = float(body.get("temperature", 0.7))
+            unload_after = bool(body.get("unload_after", False))
+            strip_thinking = bool(body.get("strip_thinking", True))
 
             if not prompt:
                 return JSONResponse(status_code=400, content={"error": "No prompt provided"})
 
             system_prompt = (
-                "You are a cinematic video prompt enhancer. Take the user's simple description "
-                "and expand it into a detailed, vivid prompt optimized for AI video generation. "
-                "Include details about lighting, camera angle, movement, atmosphere, and visual style. "
-                "Keep the output under 200 words. Output ONLY the enhanced prompt, no explanations."
+                "You are a cinematic video prompt enhancer for LTX 2.3 AI video generation. "
+                "Take the user's simple description and expand it into a detailed, vivid prompt. "
+                "Include specifics about: lighting quality and direction, camera angle and movement, "
+                "scene atmosphere, visual style, color palette, and temporal dynamics. "
+                "The prompt should guide a video diffusion model to produce cinematic output. "
+                "Keep under 200 words. Output ONLY the enhanced prompt text, no explanations or metadata."
             )
 
-            payload = _json.dumps({
-                "model": body.get("model", ""),
+            req_body = {
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt},
                 ],
-                "temperature": 0.7,
-                "max_tokens": 300,
-            }).encode("utf-8")
+                "temperature": temperature,
+                "max_tokens": min(context_length, 500),
+            }
+            if model:
+                req_body["model"] = model
+            if unload_after:
+                req_body["keep_alive"] = 0
+
+            payload = _json.dumps(req_body).encode("utf-8")
 
             def _call_llm():
                 req = urllib.request.Request(
@@ -718,11 +784,17 @@ def create_app(
                     data=payload,
                     headers={"Content-Type": "application/json"},
                 )
-                with urllib.request.urlopen(req, timeout=30) as resp:
+                with urllib.request.urlopen(req, timeout=60) as resp:
                     return _json.loads(resp.read().decode("utf-8"))
 
             data = await run_in_threadpool(_call_llm)
             enhanced = data["choices"][0]["message"]["content"].strip()
+
+            # Strip thinking/reasoning blocks if requested
+            if strip_thinking:
+                enhanced = _re.sub(r'<think>.*?</think>', '', enhanced, flags=_re.DOTALL).strip()
+                enhanced = _re.sub(r'<reasoning>.*?</reasoning>', '', enhanced, flags=_re.DOTALL).strip()
+
             return {"status": "ok", "enhanced_prompt": enhanced}
         except urllib.error.URLError:
             return JSONResponse(

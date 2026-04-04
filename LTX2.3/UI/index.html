@@ -39,7 +39,7 @@
             <span id="gpu-name" style="display: none;"></span> <!-- Hidden globally to avoid duplicate -->
         </div>
         
-        <div id="sys-settings" style="display: none; padding: 14px; background: rgba(0,0,0,0.4) !important; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); backdrop-filter: blur(10px);">
+        <div id="sys-settings" style="display: none; padding: 14px; background: rgba(0,0,0,0.4) !important; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); backdrop-filter: blur(10px); max-height: 60vh; overflow-y: auto;">
             <div style="font-size: 13px; font-weight: bold; margin-bottom: 12px; color: #fff;" data-i18n="advancedSettings">高级设置</div>
             
             <label style="font-size: 11px; margin-bottom: 6px;" data-i18n="deviceSelect">工作设备选择</label>
@@ -48,12 +48,71 @@
             </select>
             
             
-            <label style="font-size: 11px; margin-bottom: 6px; margin-top: 12px;" data-i18n="lmStudioEndpoint">LM Studio endpoint</label>
-            <input type="text" id="lm-studio-url" value="http://localhost:1234/v1/chat/completions" style="height: 28px; font-size: 11px; padding: 0 10px; margin-bottom: 12px;" data-i18n-placeholder="lmStudioUrlPh" placeholder="http://localhost:1234/v1/chat/completions">
-
-            <label style="font-size: 11px; margin-bottom: 6px; margin-top: 12px;" data-i18n="modelLoraSettings">Model & LoRA folders</label>
-            <div id="lora-placement-hint" style="font-size: 11px; color: var(--text-dim); margin-top: 8px; line-height: 1.4;" data-i18n="loraPlacementHint">
+            <!-- LM Studio Prompt Enhancement (collapsible) -->
+            <div style="margin-top: 12px; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <input type="checkbox" id="lm-studio-enabled">
+                    <label for="lm-studio-enabled" style="font-size: 11px; font-weight: bold; cursor: pointer;" data-i18n="lmStudioToggle">Enable LM Studio Enhancement</label>
                 </div>
+                <div id="lm-studio-settings" style="display: none; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                    <label style="font-size: 11px; margin-bottom: 4px;" data-i18n="lmStudioEndpoint">LM Studio endpoint</label>
+                    <input type="text" id="lm-studio-url" value="http://localhost:1234/v1/chat/completions" style="height: 28px; font-size: 11px; padding: 0 10px; margin-bottom: 8px;" data-i18n-placeholder="lmStudioUrlPh" placeholder="http://localhost:1234/v1/chat/completions">
+
+                    <label style="font-size: 11px; margin-bottom: 4px;" data-i18n="lmStudioModel">Model</label>
+                    <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                        <select id="lm-studio-model" style="flex: 1; height: 28px; font-size: 11px;">
+                            <option value="" data-i18n="lmAutoModel">Auto-detect</option>
+                        </select>
+                        <button type="button" id="lm-studio-refresh-models" class="btn-outline" style="font-size: 10px; padding: 2px 8px;" data-i18n="refresh">Refresh</button>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; margin-bottom: 8px;">
+                        <div style="flex: 1;">
+                            <label style="font-size: 11px;" data-i18n="lmContextLen">Context length</label>
+                            <input type="number" id="lm-studio-ctx" value="4096" min="512" max="131072" step="512" style="height: 28px; font-size: 11px;">
+                        </div>
+                        <div style="flex: 1;">
+                            <label style="font-size: 11px;" data-i18n="lmTemperature">Temperature</label>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <input type="range" id="lm-studio-temp" min="0" max="2" step="0.1" value="0.7" style="flex: 1;" oninput="document.getElementById('lm-temp-val').textContent = this.value">
+                                <span id="lm-temp-val" style="font-size: 11px; color: var(--accent); min-width: 24px;">0.7</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="checkbox-container" style="margin-bottom: 6px;">
+                        <input type="checkbox" id="lm-studio-unload">
+                        <label for="lm-studio-unload" style="font-size: 11px;" data-i18n="lmUnloadAfter">Unload model after inference</label>
+                    </div>
+                    <div class="checkbox-container" style="margin-bottom: 6px;">
+                        <input type="checkbox" id="lm-studio-strip-think" checked>
+                        <label for="lm-studio-strip-think" style="font-size: 11px;" data-i18n="lmStripThinking">Strip thinking/reasoning blocks</label>
+                    </div>
+
+                    <div style="font-size: 10px; color: var(--text-dim); margin-top: 6px; line-height: 1.4;" data-i18n="lmApiNote">
+                        Note: In LTX API mode, prompt enhancement is handled server-side; LM Studio is skipped.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Model, LoRA & Text Encoder Settings -->
+            <label style="font-size: 11px; margin-bottom: 6px;" data-i18n="modelLoraSettings">Model & LoRA folders</label>
+
+            <label style="font-size: 10px; margin-bottom: 4px; margin-top: 6px; color: var(--text-dim);" data-i18n="modelFolder">Models folder</label>
+            <input type="text" id="custom-models-dir" style="height: 28px; font-size: 11px; padding: 0 10px; margin-bottom: 6px;" data-i18n-placeholder="modelFolderPh" placeholder="e.g. F:\LTX2.3\models">
+
+            <label style="font-size: 10px; margin-bottom: 4px; color: var(--text-dim);" data-i18n="loraFolder">LoRA folder</label>
+            <input type="text" id="custom-lora-dir" style="height: 28px; font-size: 11px; padding: 0 10px; margin-bottom: 6px;" data-i18n-placeholder="loraFolderPh" placeholder="e.g. F:\LTX2.3\loras">
+
+            <div class="checkbox-container" style="margin-top: 6px; margin-bottom: 6px;">
+                <input type="checkbox" id="local-text-encoder-toggle" checked>
+                <label for="local-text-encoder-toggle" style="font-size: 11px;" data-i18n="textEncoderToggle">Use local text encoder</label>
+            </div>
+            <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 8px;" data-i18n="textEncoderToggleDesc">When off, uses API encoding (requires Gemini API Key)</div>
+
+            <button type="button" id="save-scan-dirs-btn" class="btn-outline" style="font-size: 11px; padding: 4px 12px;" data-i18n="saveScan">Save & Scan</button>
+
+            <div id="lora-placement-hint" style="font-size: 10px; color: var(--text-dim); margin-top: 8px; line-height: 1.4;"></div>
         </div>
     </div>
 
@@ -80,7 +139,14 @@
         <label data-i18n="promptLabel">Prompt</label>
         <textarea id="prompt" data-i18n-placeholder="promptPlaceholder" placeholder="Describe the scene..." style="height: 90px; margin-bottom: 0;"></textarea>
         <div style="display: flex; justify-content: flex-end; margin-top: 4px; margin-bottom: 4px;">
-            <button type="button" id="enhance-prompt-btn" onclick="enhancePrompt()" class="btn-outline" style="font-size: 11px; padding: 3px 10px;" data-i18n="enhancePrompt">Enhance</button>
+            <button type="button" id="enhance-prompt-btn" onclick="enhancePrompt()" class="btn-outline" style="font-size: 11px; padding: 3px 10px; display: none;" data-i18n="enhancePrompt">Enhance</button>
+        </div>
+        <div id="enhanced-prompt-display" style="display: none; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label style="font-size: 11px; color: var(--accent); font-weight: bold;" data-i18n="enhancedPromptLabel">Enhanced Prompt</label>
+                <button type="button" id="clear-enhanced-btn" onclick="clearEnhancedPrompt()" class="btn-outline" style="font-size: 10px; padding: 2px 8px;" data-i18n="clearEnhanced">Clear</button>
+            </div>
+            <div id="enhanced-prompt-text" style="font-size: 11px; padding: 8px; background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.2); border-radius: 8px; color: var(--text); line-height: 1.5; max-height: 120px; overflow-y: auto; white-space: pre-wrap;"></div>
         </div>
     </div>
 

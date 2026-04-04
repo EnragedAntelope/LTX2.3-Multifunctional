@@ -63,14 +63,15 @@
     // 模型扫描功能
     async function scanModels() {
         try {
-            const url = `${BASE}/api/models`;
+            const customDir = (document.getElementById('custom-models-dir') || {}).value?.trim() || '';
+            const url = customDir ? `${BASE}/api/models?dir=${encodeURIComponent(customDir)}` : `${BASE}/api/models`;
             console.log("Scanning models from:", url);
             const res = await fetch(url);
             const data = await res.json().catch(() => ({}));
             console.log("Models response:", res.status, data);
             if (!res.ok) {
                 const msg = data.message || data.error || res.statusText;
-                addLog(`❌ 模型扫描失败 (${res.status}): ${msg}`);
+                addLog(`❌ ${_t('logModelScanFail')} (${res.status}): ${msg}`);
                 availableModels = [];
                 updateModelDropdown();
                 updateBatchModelDropdown();
@@ -80,11 +81,11 @@
             updateModelDropdown();
             updateBatchModelDropdown();
             if (availableModels.length > 0) {
-                addLog(`📂 已扫描到 ${availableModels.length} 个模型: ${availableModels.map(m => m.name).join(', ')}`);
+                addLog(`📂 ${_t('logModelsFound').replace('{n}', availableModels.length).replace('{list}', availableModels.map(m => m.name).join(', '))}`);
             }
         } catch (e) {
             console.log("Model scan error:", e);
-            addLog(`❌ 模型扫描异常: ${e.message || e}`);
+            addLog(`❌ ${_t('logModelScanError')}: ${e.message || e}`);
         }
     }
 
@@ -103,14 +104,15 @@
     // LoRA 扫描功能
     async function scanLoras() {
         try {
-            const url = `${BASE}/api/loras`;
+            const customDir = (document.getElementById('custom-lora-dir') || {}).value?.trim() || '';
+            const url = customDir ? `${BASE}/api/loras?dir=${encodeURIComponent(customDir)}` : `${BASE}/api/loras`;
             console.log("Scanning LoRA from:", url);
             const res = await fetch(url);
             const data = await res.json().catch(() => ({}));
             console.log("LoRA response:", res.status, data);
             if (!res.ok) {
                 const msg = data.message || data.error || res.statusText;
-                addLog(`❌ LoRA 扫描失败 (${res.status}): ${msg}`);
+                addLog(`❌ ${_t('logLoraScanFail')} (${res.status}): ${msg}`);
                 availableLoras = [];
                 updateLoraDropdown();
                 updateBatchLoraDropdown();
@@ -130,15 +132,17 @@
                 }
             }
             if (availableLoras.length > 0) {
-                addLog(`📂 已扫描到 ${availableLoras.length} 个 LoRA: ${availableLoras.map(l => l.name).join(', ')}`);
+                addLog(`📂 ${_t('logLorasFound').replace('{n}', availableLoras.length).replace('{list}', availableLoras.map(l => l.name).join(', '))}`);
             }
         } catch (e) {
             console.log("LoRA scan error:", e);
-            addLog(`❌ LoRA 扫描异常: ${e.message || e}`);
+            addLog(`❌ ${_t('logLoraScanError')}: ${e.message || e}`);
         }
     }
 
     // Prompt enhancer via LM Studio
+    let _enhancedPromptText = '';
+
     async function enhancePrompt() {
         const promptEl = document.getElementById('prompt');
         const btn = document.getElementById('enhance-prompt-btn');
@@ -151,26 +155,132 @@
 
         try {
             const endpoint = (document.getElementById('lm-studio-url') || {}).value || 'http://localhost:1234/v1/chat/completions';
+            const model = (document.getElementById('lm-studio-model') || {}).value || '';
+            const context_length = parseInt((document.getElementById('lm-studio-ctx') || {}).value) || 4096;
+            const temperature = parseFloat((document.getElementById('lm-studio-temp') || {}).value) || 0.7;
+            const unload_after = !!(document.getElementById('lm-studio-unload') || {}).checked;
+            const strip_thinking = document.getElementById('lm-studio-strip-think') ? document.getElementById('lm-studio-strip-think').checked : true;
+
             const res = await fetch(`${BASE}/api/system/enhance-prompt`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, endpoint })
+                body: JSON.stringify({ prompt, endpoint, model, context_length, temperature, unload_after, strip_thinking })
             });
             const data = await res.json();
             if (data.status === 'ok' && data.enhanced_prompt) {
-                promptEl.value = data.enhanced_prompt;
-                addLog('Prompt enhanced successfully');
+                _enhancedPromptText = data.enhanced_prompt;
+                const displayEl = document.getElementById('enhanced-prompt-display');
+                const textEl = document.getElementById('enhanced-prompt-text');
+                if (displayEl && textEl) {
+                    textEl.textContent = _enhancedPromptText;
+                    displayEl.style.display = 'block';
+                }
+                addLog('✅ Prompt enhanced successfully');
             } else {
-                addLog('Prompt enhancement failed: ' + (data.error || 'unknown error'));
+                addLog('❌ Prompt enhancement failed: ' + (data.error || 'unknown error'));
             }
         } catch (e) {
-            addLog('Prompt enhancement error: ' + (e.message || e));
+            addLog('❌ ' + _t('logLmStudioConnectFail') + ': ' + (e.message || e));
         } finally {
             btn.textContent = origText;
             btn.disabled = false;
         }
     }
     window.enhancePrompt = enhancePrompt;
+
+    function clearEnhancedPrompt() {
+        _enhancedPromptText = '';
+        const displayEl = document.getElementById('enhanced-prompt-display');
+        if (displayEl) displayEl.style.display = 'none';
+    }
+    window.clearEnhancedPrompt = clearEnhancedPrompt;
+
+    function getEffectivePrompt() {
+        if (_enhancedPromptText) return _enhancedPromptText;
+        const promptEl = document.getElementById('prompt');
+        return promptEl ? promptEl.value.trim() : '';
+    }
+
+    // LM Studio model list fetch
+    async function fetchLmStudioModels() {
+        const urlInput = document.getElementById('lm-studio-url');
+        if (!urlInput) return;
+        const baseUrl = urlInput.value.replace(/\/chat\/completions\/?$/, '/models');
+        try {
+            const res = await fetch(baseUrl);
+            const data = await res.json();
+            const select = document.getElementById('lm-studio-model');
+            if (!select) return;
+            const currentVal = select.value;
+            select.innerHTML = '<option value="">' + _t('lmAutoModel') + '</option>';
+            (data.data || []).forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.id;
+                opt.textContent = m.id;
+                select.appendChild(opt);
+            });
+            if (currentVal) select.value = currentVal;
+            addLog(`📂 LM Studio: ${(data.data || []).length} model(s) found`);
+        } catch (e) {
+            addLog(`❌ ${_t('logLmStudioConnectFail')}: ${e.message || e}`);
+        }
+    }
+
+    // LM Studio toggle handler
+    function initLmStudioToggle() {
+        const toggle = document.getElementById('lm-studio-enabled');
+        const settingsDiv = document.getElementById('lm-studio-settings');
+        const enhanceBtn = document.getElementById('enhance-prompt-btn');
+        if (!toggle) return;
+
+        function applyToggle() {
+            const enabled = toggle.checked;
+            if (settingsDiv) settingsDiv.style.display = enabled ? 'block' : 'none';
+            if (enhanceBtn) enhanceBtn.style.display = enabled ? 'inline-block' : 'none';
+            localStorage.setItem('lm_studio_enabled', enabled ? '1' : '0');
+        }
+        toggle.addEventListener('change', applyToggle);
+
+        // Restore saved state
+        toggle.checked = localStorage.getItem('lm_studio_enabled') === '1';
+        applyToggle();
+
+        // Restore other LM Studio settings from localStorage
+        const savedModel = localStorage.getItem('lm_studio_model');
+        if (savedModel) { const el = document.getElementById('lm-studio-model'); if (el) el.value = savedModel; }
+        const savedCtx = localStorage.getItem('lm_studio_ctx');
+        if (savedCtx) { const el = document.getElementById('lm-studio-ctx'); if (el) el.value = savedCtx; }
+        const savedTemp = localStorage.getItem('lm_studio_temp');
+        if (savedTemp) {
+            const el = document.getElementById('lm-studio-temp');
+            const valEl = document.getElementById('lm-temp-val');
+            if (el) { el.value = savedTemp; if (valEl) valEl.textContent = savedTemp; }
+        }
+        const savedUnload = localStorage.getItem('lm_studio_unload');
+        if (savedUnload !== null) { const el = document.getElementById('lm-studio-unload'); if (el) el.checked = savedUnload === '1'; }
+        const savedStrip = localStorage.getItem('lm_studio_strip_think');
+        if (savedStrip !== null) { const el = document.getElementById('lm-studio-strip-think'); if (el) el.checked = savedStrip !== '0'; }
+        const savedEndpoint = localStorage.getItem('lm_studio_endpoint');
+        if (savedEndpoint) { const el = document.getElementById('lm-studio-url'); if (el) el.value = savedEndpoint; }
+
+        // Save LM Studio settings on change
+        ['lm-studio-model', 'lm-studio-ctx', 'lm-studio-temp', 'lm-studio-unload', 'lm-studio-strip-think', 'lm-studio-url'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('change', () => {
+                const key = id.replace(/-/g, '_');
+                if (el.type === 'checkbox') localStorage.setItem(key, el.checked ? '1' : '0');
+                else localStorage.setItem(key, el.value);
+            });
+            if (el.type === 'range') {
+                el.addEventListener('input', () => localStorage.setItem(id.replace(/-/g, '_'), el.value));
+            }
+        });
+
+        // Wire refresh button
+        const refreshBtn = document.getElementById('lm-studio-refresh-models');
+        if (refreshBtn) refreshBtn.addEventListener('click', fetchLmStudioModels);
+    }
 
     function updateLoraDropdown() {
         const select = document.getElementById('vid-lora');
@@ -223,19 +333,73 @@
         updateBatchLoraDropdown();
     }
 
-    // 已移除：模型/LoRA 目录自定义与浏览（保持后端默认路径扫描）
+    // Directory save & scan logic
+    async function saveAndScanDirs() {
+        const modelsDir = (document.getElementById('custom-models-dir') || {}).value?.trim() || '';
+        const loraDir = (document.getElementById('custom-lora-dir') || {}).value?.trim() || '';
+        const useLocalEncoder = !!(document.getElementById('local-text-encoder-toggle') || {}).checked;
 
-    // 页面加载时扫描模型和LoRA（使用后端默认目录规则）
+        try {
+            // Save LoRA dir
+            if (loraDir !== undefined) {
+                await fetch(`${BASE}/api/lora-dir`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ loraDir })
+                });
+            }
+            // Save models dir + text encoder toggle
+            await fetch(`${BASE}/api/models-dir`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ modelsDir: modelsDir, useLocalTextEncoder: useLocalEncoder })
+            });
+            addLog(`✅ ${_t('logDirSaved')}`);
+        } catch (e) {
+            addLog(`❌ ${_t('logDirSaveError')}: ${e.message}`);
+        }
+
+        // Re-scan
+        addLog(`🔄 ${_t('logRescanning')}`);
+        await scanModels();
+        await scanLoras();
+        addLog(`✅ ${_t('logRescanComplete')}`);
+    }
+
+    async function loadSavedDirs() {
+        try {
+            const [loraRes, modelsRes] = await Promise.all([
+                fetch(`${BASE}/api/lora-dir`).then(r => r.json()).catch(() => ({})),
+                fetch(`${BASE}/api/models-dir`).then(r => r.json()).catch(() => ({}))
+            ]);
+            const loraInput = document.getElementById('custom-lora-dir');
+            const modelsInput = document.getElementById('custom-models-dir');
+            const encoderToggle = document.getElementById('local-text-encoder-toggle');
+            if (loraInput && loraRes.loraDir) loraInput.value = loraRes.loraDir;
+            if (modelsInput && modelsRes.modelsDir) modelsInput.value = modelsRes.modelsDir;
+            if (encoderToggle && modelsRes.useLocalTextEncoder !== undefined) encoderToggle.checked = modelsRes.useLocalTextEncoder;
+        } catch (e) {}
+    }
+
+    // Scan using custom dirs from inputs
+    // (update scanModels and scanLoras to pass custom dir query param inline)
+
+    // Page load init: scan models and LoRAs (using backend default directory rules)
     (function() {
         ['vid-quality', 'batch-quality'].forEach((id) => {
             const sel = document.getElementById(id);
             if (sel && sel.value === '544') sel.value = '540';
         });
-        
-        setTimeout(() => {
+
+        setTimeout(async () => {
+            await loadSavedDirs();
             scanModels();
             scanLoras();
             initBatchDropdowns();
+            initLmStudioToggle();
+            // Wire save & scan button
+            const saveScanBtn = document.getElementById('save-scan-dirs-btn');
+            if (saveScanBtn) saveScanBtn.addEventListener('click', saveAndScanDirs);
         }, 1500);
     })();
 
@@ -326,7 +490,7 @@
         const reader = new FileReader();
         reader.onload = async (e) => {
             const b64Data = e.target.result;
-            addLog(`正在上传 ${frameType === 'start' ? '起始帧' : '结束帧'}: ${file.name}...`);
+            addLog(`${frameType === 'start' ? _t('logUploadingStartFrame') : _t('logUploadingEndFrame')}: ${file.name}...`);
             try {
                 const res = await fetch(`${BASE}/api/system/upload-image`, {
                     method: 'POST',
@@ -336,12 +500,12 @@
                 const data = await res.json();
                 if (res.ok && data.path) {
                     document.getElementById(`${frameType}-frame-path`).value = data.path;
-                    addLog(`✅ ${frameType === 'start' ? '起始帧' : '结束帧'}上传成功`);
+                    addLog(`✅ ${frameType === 'start' ? _t('logStartFrameUploaded') : _t('logEndFrameUploaded')}`);
                 } else {
-                    throw new Error(data.error || data.detail || "上传失败");
+                    throw new Error(data.error || data.detail || _t('uploadFailed'));
                 }
             } catch (e) {
-                addLog(`❌ 帧图片上传失败: ${e.message}`);
+                addLog(`❌ ${_t('logFrameUploadFail')}: ${e.message}`);
             }
         };
         reader.readAsDataURL(file);
@@ -354,7 +518,7 @@
         document.getElementById(`${frameType}-frame-preview`).src = "";
         document.getElementById(`${frameType}-frame-placeholder`).style.display = 'block';
         document.getElementById(`clear-${frameType}-frame-overlay`).style.display = 'none';
-        addLog(`🧹 已清除${frameType === 'start' ? '起始帧' : '结束帧'}`);
+        addLog(`🧹 ${frameType === 'start' ? _t('logStartFrameCleared') : _t('logEndFrameCleared')}`);
     }
 
     // 处理图片上传
@@ -379,7 +543,7 @@
         const reader = new FileReader();
         reader.onload = async (e) => {
             const b64Data = e.target.result;
-            addLog(`正在上传参考图: ${file.name}...`);
+            addLog(`${_t('logUploadingRefImg')}: ${file.name}...`);
             try {
                 const res = await fetch(`${BASE}/api/system/upload-image`, {
                     method: 'POST',
@@ -392,16 +556,16 @@
                 const data = await res.json();
                 if (res.ok && data.path) {
                     document.getElementById('uploaded-img-path').value = data.path;
-                    addLog(`✅ 参考图上传成功: ${file.name}`);
+                    addLog(`✅ ${_t('logRefImgUploaded')}: ${file.name}`);
                 } else {
-                    const errMsg = data.error || data.detail || "上传失败";
+                    const errMsg = data.error || data.detail || _t('uploadFailed');
                     throw new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
                 }
             } catch (e) {
-                addLog(`❌ 图片上传失败: ${e.message}`);
+                addLog(`❌ ${_t('logImgUploadFail')}: ${e.message}`);
             }
         };
-        reader.onerror = () => addLog("❌ 读取本地文件失败");
+        reader.onerror = () => addLog(`❌ ${_t('logFileReadFail')}`);
         reader.readAsDataURL(file);
     }
 
@@ -412,7 +576,7 @@
         document.getElementById('upload-preview').src = "";
         document.getElementById('upload-placeholder').style.display = 'block';
         document.getElementById('clear-img-overlay').style.display = 'none';
-        addLog("🧹 已清除参考图");
+        addLog(`🧹 ${_t('logRefImgCleared')}`);
     }
 
     // 处理音频上传
@@ -432,7 +596,7 @@
         const reader = new FileReader();
         reader.onload = async (e) => {
             const b64Data = e.target.result;
-            addLog(`正在上传音频: ${file.name}...`);
+            addLog(`${_t('logUploadingAudio')}: ${file.name}...`);
             try {
                 // 复用图片上传接口，后端已支持任意文件类型
                 const res = await fetch(`${BASE}/api/system/upload-image`, {
@@ -446,16 +610,16 @@
                 const data = await res.json();
                 if (res.ok && data.path) {
                     document.getElementById('uploaded-audio-path').value = data.path;
-                    addLog(`✅ 音频上传成功: ${file.name}`);
+                    addLog(`✅ ${_t('logAudioUploaded')}: ${file.name}`);
                 } else {
-                    const errMsg = data.error || data.detail || "上传失败";
+                    const errMsg = data.error || data.detail || _t('uploadFailed');
                     throw new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
                 }
             } catch (e) {
-                addLog(`❌ 音频上传失败: ${e.message}`);
+                addLog(`❌ ${_t('logAudioUploadFail')}: ${e.message}`);
             }
         };
-        reader.onerror = () => addLog("❌ 读取本地音频文件失败");
+        reader.onerror = () => addLog(`❌ ${_t('logAudioReadFail')}`);
         reader.readAsDataURL(file);
     }
 
@@ -465,7 +629,7 @@
         document.getElementById('audio-upload-placeholder').style.display = 'block';
         document.getElementById('audio-upload-status').style.display = 'none';
         document.getElementById('clear-audio-overlay').style.display = 'none';
-        addLog("🧹 已清除音频文件");
+        addLog(`🧹 ${_t('logAudioCleared')}`);
     }
 
     // 处理超分视频上传
@@ -484,7 +648,7 @@
         const reader = new FileReader();
         reader.onload = async (e) => {
             const b64Data = e.target.result;
-            addLog(`正在上传待超分视频: ${file.name}...`);
+            addLog(`${_t('logUploadingUpscaleVideo')}: ${file.name}...`);
             try {
                 const res = await fetch(`${BASE}/api/system/upload-image`, {
                     method: 'POST',
@@ -494,12 +658,12 @@
                 const data = await res.json();
                 if (res.ok && data.path) {
                     document.getElementById('upscale-video-path').value = data.path;
-                    addLog(`✅ 视频上传成功`);
+                    addLog(`✅ ${_t('logVideoUploaded')}`);
                 } else {
-                    throw new Error(data.error || "上传失败");
+                    throw new Error(data.error || _t('uploadFailed'));
                 }
             } catch (e) {
-                addLog(`❌ 视频上传失败: ${e.message}`);
+                addLog(`❌ ${_t('logVideoUploadFail')}: ${e.message}`);
             }
         };
         reader.readAsDataURL(file);
@@ -511,7 +675,7 @@
         document.getElementById('upscale-placeholder').style.display = 'block';
         document.getElementById('upscale-status').style.display = 'none';
         document.getElementById('clear-upscale-overlay').style.display = 'none';
-        addLog("🧹 已清除待超分视频");
+        addLog(`🧹 ${_t('logUpscaleVideoCleared')}`);
     }
 
     // 初始化拖拽上传逻辑
@@ -651,7 +815,7 @@
     }
     async function handleBatchImagesUpload(files, append = true) {
         if (!files || files.length === 0) return;
-        addLog(`正在上传 ${files.length} 张图片...`);
+        addLog(_t('logUploadingImages').replace('{n}', files.length));
 
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
@@ -681,7 +845,7 @@
 
             if (imgData) {
                 batchImages.push(imgData);
-                addLog(`✅ 图片 ${i + 1}/${files.length} 上传成功: ${file.name}`);
+                addLog(`✅ ${_t('logImageNUploaded').replace('{i}', i + 1).replace('{n}', files.length).replace('{name}', file.name)}`);
             }
         }
 
@@ -697,7 +861,7 @@
         const reader = new FileReader();
         reader.onload = async (e) => {
             const b64Data = e.target.result;
-            addLog(`正在上传成片配乐: ${file.name}...`);
+            addLog(`${_t('logUploadingBgm')}: ${file.name}...`);
             try {
                 const res = await fetch(`${BASE}/api/system/upload-image`, {
                     method: 'POST',
@@ -714,15 +878,15 @@
                         st.textContent = '✓ ' + file.name;
                     }
                     if (overlay) overlay.style.display = 'flex';
-                    addLog('✅ 成片配乐已上传（将覆盖各片段自带音轨）');
+                    addLog(`✅ ${_t('logBgmUploaded')}`);
                 } else {
-                    addLog(`❌ 配乐上传失败: ${data.error || '未知错误'}`);
+                    addLog(`❌ ${_t('logBgmUploadFail')}: ${data.error || e}`);
                 }
             } catch (err) {
-                addLog(`❌ 配乐上传失败: ${err.message}`);
+                addLog(`❌ ${_t('logBgmUploadFail')}: ${err.message}`);
             }
         };
-        reader.onerror = () => addLog('❌ 读取音频文件失败');
+        reader.onerror = () => addLog(`❌ ${_t('logBgmReadFail')}`);
         reader.readAsDataURL(file);
     }
 
@@ -740,7 +904,7 @@
             st.textContent = '';
         }
         if (overlay) overlay.style.display = 'none';
-        addLog('🧹 已清除成片配乐');
+        addLog(`🧹 ${_t('logBgmCleared')}`);
     }
 
     function syncBatchDropZoneChrome() {
@@ -1214,7 +1378,7 @@
     checkStatus();
     initDragAndDrop();
     listGpus(); // 初始化 GPU 列表
-    // 已移除：输出目录自定义（保持后端默认路径）
+    // Output directory customization handled via settings panel
 
     updateResPreview();
     updateBatchResPreview();
@@ -1245,11 +1409,11 @@
                 body: JSON.stringify({ directory: dir })
             });
             if (res.ok) {
-                addLog(`✅ 存储路径更新成功! 当前路径: ${dir || _t('defaultPath')}`);
+                addLog(`✅ ${_t('logPathUpdated').replace('{path}', dir || _t('defaultPath'))}`);
                 if (typeof fetchHistory === 'function') fetchHistory(currentHistoryPage);
             }
         } catch (e) {
-            addLog(`❌ 设置路径时连接异常: ${e.message}`);
+            addLog(`❌ ${_t('logPathSetError')}: ${e.message}`);
         }
     }
 
@@ -1261,12 +1425,12 @@
                 document.getElementById('global-out-dir').value = data.directory;
                 // auto apply immediately
                 setOutputDir();
-                addLog(`📂 检测到新路径，已自动套用！`);
+                addLog(`📂 ${_t('logNewPathDetected')}`);
             } else if (data.error) {
-                addLog(`❌ 内部系统权限拦截了弹窗: ${data.error}`);
+                addLog(`❌ ${_t('logBrowsePermDenied')}: ${data.error}`);
             }
         } catch (e) {
-            addLog(`❌ 无法调出文件夹浏览弹窗, 请直接复制粘贴绝对路径。`);
+            addLog(`❌ ${_t('logBrowseFail')}`);
         }
     }
 
@@ -1330,6 +1494,8 @@
         const btn = document.getElementById('mainBtn');
         const promptEl = document.getElementById('prompt');
         const prompt = promptEl ? promptEl.value.trim() : '';
+        // Use enhanced prompt for generation if available
+        const effectivePrompt = getEffectivePrompt() || prompt;
 
         function batchHasUsablePrompt() {
             if (prompt) return true;
@@ -1407,7 +1573,7 @@
                 loadingCard.onclick = showGeneratingView;
                 loadingCard.innerHTML = `
                     <div class="spinner"></div>
-                    <div id="loading-card-step" style="font-size:10px;color:var(--text-dim);margin-top:4px;">等待中...</div>
+                    <div id="loading-card-step" style="font-size:10px;color:var(--text-dim);margin-top:4px;">${_t('logWaitingCard')}</div>
                 `;
                 historyContainer.prepend(loadingCard);
             }
@@ -1419,11 +1585,11 @@
                 const h = parseInt(document.getElementById('img-h').value);
                 endpoint = '/api/generate-image';
                 payload = {
-                    prompt, width: w, height: h,
+                    prompt: effectivePrompt, width: w, height: h,
                     numSteps: parseInt(document.getElementById('img-steps').value),
                     numImages: 1
                 };
-                addLog(`正在发起图像渲染: ${w}x${h}, Steps: ${payload.numSteps}`);
+                addLog(`${_t('logRenderingImage')}: ${w}x${h}, Steps: ${payload.numSteps}`);
 
             } else if (currentMode === 'video') {
                 const res = updateResPreview();
@@ -1455,7 +1621,7 @@
                 console.log("loraPath:", loraPath);
                 console.log("loraStrength:", loraStrength);
                 payload = {
-                    prompt, resolution: res, model: "ltx-2",
+                    prompt: effectivePrompt, resolution: res, model: "ltx-2",
                     cameraMotion: document.getElementById('vid-motion').value,
                     negativePrompt: "low quality, blurry, noisy, static noise, distorted",
                     duration: String(dur), fps, audio,
@@ -1468,7 +1634,7 @@
                     loraPath: loraPath || null,
                     loraStrength: loraStrength,
                 };
-                addLog(`正在发起视频渲染: ${res}, 时长: ${dur}s, FPS: ${fps}, 模型: ${modelPath ? modelPath.split(/[/\\]/).pop() : _t('modelDefaultLabel')}, LoRA: ${loraPath ? loraPath.split(/[/\\]/).pop() : _t('loraNoneLabel')}`);
+                addLog(`${_t('logRenderingVideo')}: ${res}, ${dur}s, FPS: ${fps}, Model: ${modelPath ? modelPath.split(/[/\\]/).pop() : _t('modelDefaultLabel')}, LoRA: ${loraPath ? loraPath.split(/[/\\]/).pop() : _t('loraNoneLabel')}`);
 
             } else if (currentMode === 'upscale') {
                 const videoPath = document.getElementById('upscale-video-path').value;
@@ -1476,7 +1642,7 @@
                 if (!videoPath) throw new Error(_t('errUpscaleNoVideo'));
                 endpoint = '/api/system/upscale-video';
                 payload = { video_path: videoPath, resolution: targetRes, prompt: "high quality, detailed, 4k", strength: 0.7 };
-                addLog(`正在发起视频超分: 目标 ${targetRes}`);
+                addLog(_t('logRenderingUpscale').replace('{res}', targetRes));
             } else if (currentMode === 'batch') {
                 const res = updateBatchResPreview();
                 const commonPromptEl = document.getElementById('batch-common-prompt');
@@ -1495,7 +1661,7 @@
                 if (batchWorkflowIsSingle()) {
                     captureBatchKfTimelineFromDom();
                     const fps = document.getElementById('vid-fps').value;
-                    const parts = [prompt.trim(), commonPrompt.trim()].filter(Boolean);
+                    const parts = [effectivePrompt.trim(), commonPrompt.trim()].filter(Boolean);
                     const combinedPrompt = parts.join(', ');
                     if (!combinedPrompt) {
                         throw new Error(_t('errSingleKfPrompt'));
@@ -1550,14 +1716,14 @@
                         loraStrength: loraStrength,
                     };
                     addLog(
-                        `单次多关键帧: ${nKf} 锚点, 轴长合计 ${sumSec.toFixed(1)}s → 请求时长 ${dur}s, ${res}, FPS ${fps}`
+                        _t('logBatchSingleKf').replace('{spec}', `${nKf} keyframes, ${sumSec.toFixed(1)}s → ${dur}s, ${res}, FPS ${fps}`)
                     );
                 } else {
                     const segments = [];
                     for (let i = 0; i < batchImages.length - 1; i++) {
                         const duration = parseFloat(document.getElementById(`batch-segment-duration-${i}`)?.value || 5);
                         const segmentPrompt = document.getElementById(`batch-segment-prompt-${i}`)?.value || '';
-                        const segParts = [prompt.trim(), commonPrompt.trim(), segmentPrompt.trim()].filter(Boolean);
+                        const segParts = [effectivePrompt.trim(), commonPrompt.trim(), segmentPrompt.trim()].filter(Boolean);
                         const combinedSegPrompt = segParts.join(', ');
                         segments.push({
                             startImage: batchImages[i].path,
@@ -1581,7 +1747,7 @@
                         negativePrompt: "low quality, blurry, noisy, static noise, distorted",
                         backgroundAudioPath: backgroundAudioPath || null
                     };
-                    addLog(`分段拼接: ${segments.length} 段, ${res}${backgroundAudioPath ? '，含统一配乐' : ''}`);
+                    addLog(_t('logBatchSegments').replace('{spec}', `${segments.length} segments, ${res}${backgroundAudioPath ? ' + BGM' : ''}`));
                 }
             }
 
@@ -1593,14 +1759,14 @@
             });
             const data = await res.json();
             if (!res.ok) {
-                const errMsg = data.error || data.detail || "API 拒绝了请求";
+                const errMsg = data.error || data.detail || _t('backendRejected');
                 throw new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
             }
 
             // ---- 显示结果 ----
             const rawPath = data.image_paths ? data.image_paths[0] : data.video_path;
             if (rawPath) {
-                try { displayOutput(rawPath); } catch (dispErr) { addLog(`⚠️ 播放器显示异常: ${dispErr.message}`); }
+                try { displayOutput(rawPath); } catch (dispErr) { addLog(`⚠️ ${_t('logPlayerError')}: ${dispErr.message}`); }
             }
 
             // 强制刷新历史记录（不依赖 isLoadingHistory 标志，确保新生成的视频立即显示）
@@ -1611,14 +1777,14 @@
 
         } catch (e) {
             const errText = e && e.message ? e.message : String(e);
-            addLog(`❌ 渲染中断: ${errText}`);
+            addLog(`❌ ${_t('logRenderInterrupted')}: ${errText}`);
             const loader = document.getElementById('loading-txt');
             if (loader) {
                 loader.style.display = 'flex';
                 loader.textContent = '';
                 const span = document.createElement('span');
                 span.style.cssText = 'color:var(--text-sub);font-size:13px;padding:12px;text-align:center;';
-                span.textContent = `渲染失败：${errText}`;
+                span.textContent = `${_t('logRenderFailed')}: ${errText}`;
                 loader.appendChild(span);
             }
 
@@ -1644,16 +1810,16 @@
             });
             const data = await res.json();
             if (res.ok) {
-                addLog(`🧹 显存清理成功: ${data.message}`);
+                addLog(`🧹 ${_t('logVramCleared')}: ${data.message}`);
                 // 立即触发状态刷新
                 checkStatus();
                 setTimeout(checkStatus, 1000); 
             } else {
-                const errMsg = data.error || data.detail || "后端未实现此接口 (404)";
+                const errMsg = data.error || data.detail || _t('backendNotImpl');
                 throw new Error(errMsg);
             }
         } catch(e) {
-            addLog(`❌ 清理显存失败: ${e.message}`);
+            addLog(`❌ ${_t('logVramClearFail')}: ${e.message}`);
         } finally {
             btn.disabled = false;
             btn.innerText = _t('clearVram');
@@ -1681,7 +1847,7 @@
 
     async function switchGpu(id) {
         if (!id) return;
-        addLog(`🔄 正在切换到 GPU ${id}...`);
+        addLog(`🔄 ${_t('logGpuSwitching').replace('{id}', id)}`);
         try {
             const res = await fetch(`${BASE}/api/system/switch-gpu`, {
                 method: 'POST',
@@ -1690,14 +1856,14 @@
             });
             const data = await res.json();
             if (res.ok) {
-                addLog(`✅ 已成功切换到 GPU ${id}，模型将重新加载。`);
+                addLog(`✅ ${_t('logGpuSwitched').replace('{id}', id)}`);
                 listGpus(); // 重新获取列表以同步状态
                 setTimeout(checkStatus, 1000);
             } else {
-                throw new Error(data.error || "切换失败");
+                throw new Error(data.error || _t('switchFailed'));
             }
         } catch (e) {
-            addLog(`❌ GPU 切换失败: ${e.message}`);
+            addLog(`❌ ${_t('logGpuSwitchFail')}: ${e.message}`);
         }
     }
 
@@ -1779,7 +1945,7 @@
         if (currentMode === 'image') {
             img.src = url;
             img.style.display = "block";
-            addLog(`✅ 图像渲染成功: ${fileName}`);
+            addLog(`✅ ${_t('logImageRendered')}: ${fileName}`);
         } else {
             document.getElementById('video-wrapper').style.display = "flex";
             
@@ -1792,7 +1958,7 @@
             } else {
                 vid.src = url;
             }
-            addLog(`✅ 视频渲染成功: ${fileName}`);
+            addLog(`✅ ${_t('logVideoRendered')}: ${fileName}`);
         }
     }
 
@@ -1924,7 +2090,7 @@ window.addEventListener('DOMContentLoaded', () => switchMode('video'));
     }
     
     async function deleteHistoryItem(filename, type, btn) {
-        if (!confirm(`确定要删除 "${filename}" 吗？`)) return;
+        if (!confirm(_t('confirmDelete').replace('{name}', filename))) return;
         
         try {
             const res = await fetch(`${BASE}/api/system/delete-file`, {
@@ -1940,7 +2106,7 @@ window.addEventListener('DOMContentLoaded', () => switchMode('video'));
                     card.remove();
                 }
             } else {
-                alert('删除失败');
+                alert(_t('deleteFailed'));
             }
         } catch(e) {
             console.error('Delete failed', e);

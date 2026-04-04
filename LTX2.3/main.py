@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 # ============================================================
-# 配置区 (动态路径适配与补丁挂载)
+# 配置区 / Configuration (dynamic path resolution & patch mounting)
 # ============================================================
 def resolve_ltx_path():
     import glob, tempfile, subprocess
@@ -37,12 +37,11 @@ def resolve_ltx_path():
         os.remove(vbs_path)
         
     if not target_exe or not os.path.exists(target_exe):
-        # 如果快捷方式解析失败，或者解析出来的是朋友电脑的路径（当前电脑不存在），自动全盘搜索默认路径
+        # 如果快捷方式解析失败 / If shortcut resolution fails, search default install locations
         default_paths = [
             os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\LTX Desktop\LTX Desktop.exe"),
-            r"C:\Program Files\LTX Desktop\LTX Desktop.exe",
-            r"D:\Program Files\LTX Desktop\LTX Desktop.exe",
-            r"E:\Program Files\LTX Desktop\LTX Desktop.exe"
+            os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), r"LTX Desktop\LTX Desktop.exe"),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), r"LTX Desktop\LTX Desktop.exe"),
         ]
         found = False
         for p in default_paths:
@@ -63,12 +62,12 @@ USER_PROFILE = os.path.expanduser("~")
 PYTHON_EXE = os.path.join(USER_PROFILE, r"AppData\Local\LTXDesktop\python\python.exe")
 DATA_DIR = os.path.join(USER_PROFILE, r"AppData\Local\LTXDesktop")
 
-# 1. 动态获取主安装路径
+# 1. 动态获取主安装路径 / Dynamically resolve main install path
 LTX_INSTALL_DIR = resolve_ltx_path()
 BACKEND_DIR = os.path.join(LTX_INSTALL_DIR, r"resources\backend")
 UI_FILE_NAME = "UI/index.html"
 
-# 环境致命检测：如果官方 Python 还没解压释放，立刻强制中断整个程序
+# 环境致命检测 / Fatal check: if official Python hasn't been extracted yet, abort
 if not os.path.exists(PYTHON_EXE):
     print(f"\n\033[1;41m [FATAL] LTX Desktop rendering engine not found! \033[0m")
     print(f"\033[93mThis app is a UI frontend and requires the official LTX Desktop environment.")
@@ -80,22 +79,22 @@ if not os.path.exists(PYTHON_EXE):
     print("4. Then restart this run.bat script!\033[0m\n")
     os._exit(1)
 
-# 2. 从目录读取改动过的 Python 文件 (热修复拦截器)
+# 2. 从目录读取改动过的 Python 文件 / Read patched Python files (hot-fix interceptor)
 PATCHES_DIR = os.path.join(os.getcwd(), "patches")
 os.makedirs(PATCHES_DIR, exist_ok=True)
 
-# 3. 默认输出定向至程序根目录
+# 3. 默认输出定向至程序根目录 / Default output to project root
 LOCAL_OUTPUTS = os.path.join(os.getcwd(), "outputs")
 os.makedirs(LOCAL_OUTPUTS, exist_ok=True)
 
-# 强制注入自定义输出录至 LTX 缓存数据中
+# 强制注入自定义输出目录至 LTX 缓存 / Force-inject custom output dir into LTX data cache
 os.makedirs(DATA_DIR, exist_ok=True)
 with open(os.path.join(DATA_DIR, "custom_dir.txt"), 'w', encoding='utf-8') as f:
     f.write(LOCAL_OUTPUTS)
 
 os.environ["LTX_APP_DATA_DIR"] = DATA_DIR
 
-# 将 patches 目录优先级提升，做到 Python 无损替换
+# 将 patches 目录优先级提升 / Elevate patches dir priority for seamless Python override
 os.environ["PYTHONPATH"] = f"{PATCHES_DIR};{BACKEND_DIR}"
 
 def get_lan_ip():
@@ -125,14 +124,14 @@ def get_lan_ip():
 LAN_IP = get_lan_ip()
 
 # ============================================================
-# 服务启动逻辑
+# 服务启动逻辑 / Server launch logic
 # ============================================================
 def check_port_in_use(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('127.0.0.1', port)) == 0
 
 def launch_backend():
-    """启动核心引擎 - 监听 0.0.0.0 确保局域网可调"""
+    """启动核心引擎 / Start core rendering engine — listens on 0.0.0.0 for LAN access"""
     if check_port_in_use(3000):
         print(f"\n\033[1;41m [FATAL] Port 3000 is already in use! \033[0m")
         print("\033[93m>> Most likely the official LTX Desktop is running in the background.\033[0m")
@@ -141,7 +140,7 @@ def launch_backend():
         os._exit(1)
 
     print(f"\033[96m[CORE] Starting rendering engine...\033[0m")
-    # 只开启重要级别的 Python 应用层日志，去除无用的 HTTP 刷屏
+    # 只开启重要级别日志 / Only enable important-level logs, suppress HTTP noise
     import logging as _logging
     _logging.basicConfig(
         level=_logging.INFO,
@@ -150,7 +149,7 @@ def launch_backend():
         force=True
     )
     
-    # 构建绝对无损的环境拦截器：防止其他电脑被 cwd 劫持加载原版文件
+    # 构建环境拦截器 / Build env interceptor to prevent cwd hijacking of original files
     launcher_code = f"""
 import sys
 import os
@@ -185,7 +184,7 @@ if __name__ == '__main__':
         os._exit(1)
 
 ui_app = FastAPI()
-# 已移除存在安全隐患的静态资源挂载目录
+# 已移除静态资源挂载 / Removed insecure static mount directory
 
 @ui_app.get("/")
 async def serve_index():
@@ -210,11 +209,11 @@ def launch_ui_server():
     print(f"\033[92m[LOCAL] http://127.0.0.1:4000\033[0m")
     print(f"\033[93m[LAN]   http://{LAN_IP}:4000\033[0m")
     
-    # 彻底压制 WinError 10054 (客户端强制断开) 的底层警告报错
+    # 彻底压制 WinError 10054 / Suppress WinError 10054 (client forcibly disconnected) noise
     if sys.platform == 'win32':
         # Uvicorn 内部会拉起循环，所以只能通过底层 Logging Filter 拦截控制台噪音
         class UvicornAsyncioNoiseFilter(logging.Filter):
-            """压掉客户端断开、Win Proactor 管道收尾等无害 asyncio 控制台刷屏。"""
+            """压掉无害 asyncio 噪音 / Suppress harmless asyncio console spam (client disconnect, Proactor pipe cleanup)."""
 
             def filter(self, record):
                 if record.name != "asyncio":
@@ -242,7 +241,7 @@ if __name__ == "__main__":
     
     threading.Thread(target=launch_backend, daemon=True).start()
     
-    # 强制校验 3000 端口是否存活
+    # 强制校验 3000 端口 / Verify backend is alive on port 3000
     print("\033[93m[SYS] Waiting for backend on port 3000...\033[0m")
     backend_ready = False
     for _ in range(30):
