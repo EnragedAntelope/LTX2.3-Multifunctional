@@ -393,6 +393,88 @@ def create_app(
             traceback.print_exc()
             return JSONResponse(status_code=500, content={"error": str(e)})
 
+    # ---- Seed control endpoints ----
+    @app.get("/api/system/seed-settings")
+    async def route_get_seed_settings():
+        """Return current seed lock state and value."""
+        settings = handler.state.app_settings
+        return {
+            "seed_locked": bool(getattr(settings, "seed_locked", False)),
+            "locked_seed": int(getattr(settings, "locked_seed", 42)),
+        }
+
+    @app.post("/api/system/seed-settings")
+    async def route_set_seed_settings(request: Request):
+        """Update seed lock state and value in memory + settings.json."""
+        import json
+        body = await request.json()
+        seed_locked = bool(body.get("seed_locked", False))
+        locked_seed = int(body.get("locked_seed", 42))
+
+        # Update in-memory settings
+        handler.state.app_settings.seed_locked = seed_locked
+        handler.state.app_settings.locked_seed = locked_seed
+
+        # Persist to settings.json
+        settings_file = _ltx_desktop_config_dir() / "settings.json"
+        try:
+            data = {}
+            if settings_file.exists():
+                with open(settings_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            data["seed_locked"] = seed_locked
+            data["locked_seed"] = locked_seed
+            with open(settings_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"[seed-settings] Failed to persist: {e}")
+
+        return {"status": "ok", "seed_locked": seed_locked, "locked_seed": locked_seed}
+
+    # ---- Upscaler toggle endpoints ----
+    @app.get("/api/system/upscaler")
+    async def route_get_upscaler():
+        """Return current upscaler enabled state."""
+        import json
+        settings_file = _ltx_desktop_config_dir() / "settings.json"
+        try:
+            with open(settings_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return {"enabled": data.get("fast_model", {}).get("use_upscaler", True)}
+        except Exception:
+            return {"enabled": True}
+
+    @app.post("/api/system/upscaler")
+    async def route_set_upscaler(request: Request):
+        """Toggle upscaler for both fast and pro models."""
+        import json
+        body = await request.json()
+        enabled = bool(body.get("enabled", True))
+
+        settings_file = _ltx_desktop_config_dir() / "settings.json"
+        try:
+            data = {}
+            if settings_file.exists():
+                with open(settings_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            data.setdefault("fast_model", {})["use_upscaler"] = enabled
+            data.setdefault("pro_model", {})["use_upscaler"] = enabled
+            with open(settings_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"[upscaler] Failed to persist: {e}")
+
+        # Also update in-memory settings if possible
+        try:
+            if hasattr(handler.state.app_settings, "fast_model"):
+                handler.state.app_settings.fast_model["use_upscaler"] = enabled
+            if hasattr(handler.state.app_settings, "pro_model"):
+                handler.state.app_settings.pro_model["use_upscaler"] = enabled
+        except Exception:
+            pass
+
+        return {"status": "ok", "enabled": enabled}
+
     @app.post("/api/system/set-dir")
     async def route_set_dir(request: Request):
         try:

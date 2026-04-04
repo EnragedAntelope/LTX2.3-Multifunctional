@@ -773,3 +773,49 @@
     padding: 20px 15px 15px 15px;
 }
 
+/* Enhance prompt button - always visible */
+.btn-enhance {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(37,99,235,0.08);
+    border: 1px solid rgba(37,99,235,0.25);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+.btn-enhance:hover:not(.disabled) {
+    background: rgba(37,99,235,0.18);
+    border-color: var(--accent);
+}
+.btn-enhance.disabled {
+    opacity: 0.4;
+    cursor: default;
+    border-color: var(--border);
+    color: var(--text-dim);
+    background: transparent;
+}
+.btn-enhance.disabled:hover {
+    opacity: 0.55;
+    border-color: rgba(255,255,255,0.15);
+}
+.btn-enhance.enhancing {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+/* Settings highlight animation for LM Studio discovery */
+@keyframes settingsHighlight {
+    0%, 100% { border-color: rgba(255,255,255,0.05); }
+    50% { border-color: var(--accent); box-shadow: 0 0 12px rgba(37,99,235,0.3); }
+}
+.lm-studio-highlight {
+    animation: settingsHighlight 0.6s ease 2;
+    border-radius: 8px;
+    padding: 4px;
+}

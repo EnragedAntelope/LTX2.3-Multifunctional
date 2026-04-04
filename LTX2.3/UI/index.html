@@ -113,6 +113,13 @@
             <button type="button" id="save-scan-dirs-btn" class="btn-outline" style="font-size: 11px; padding: 4px 12px;" data-i18n="saveScan">Save & Scan</button>
 
             <div id="lora-placement-hint" style="font-size: 10px; color: var(--text-dim); margin-top: 8px; line-height: 1.4;"></div>
+
+            <!-- Upscaler Toggle -->
+            <div class="checkbox-container" style="margin-top: 10px; margin-bottom: 4px;">
+                <input type="checkbox" id="upscaler-toggle" checked>
+                <label for="upscaler-toggle" style="font-size: 11px;" data-i18n="upscalerToggle">Enable built-in upscaler</label>
+            </div>
+            <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 8px; line-height: 1.4;" data-i18n="upscalerDesc">Disabling reduces VRAM usage. Takes effect on next generation.</div>
         </div>
     </div>
 
@@ -136,17 +143,32 @@
             </div>
         </div>
         
-        <label data-i18n="promptLabel">Prompt</label>
-        <textarea id="prompt" data-i18n-placeholder="promptPlaceholder" placeholder="Describe the scene..." style="height: 90px; margin-bottom: 0;"></textarea>
-        <div style="display: flex; justify-content: flex-end; margin-top: 4px; margin-bottom: 4px;">
-            <button type="button" id="enhance-prompt-btn" onclick="enhancePrompt()" class="btn-outline" style="font-size: 11px; padding: 3px 10px; display: none;" data-i18n="enhancePrompt">Enhance</button>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label style="margin-bottom: 0;" data-i18n="promptLabel">Prompt</label>
+            <button type="button" id="enhance-prompt-btn" onclick="handleEnhanceClick()" class="btn-enhance disabled" title="Enhance prompt with AI" data-i18n-title="enhancePromptTooltip">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/></svg>
+                <span data-i18n="enhancePrompt">Enhance</span>
+            </button>
         </div>
-        <div id="enhanced-prompt-display" style="display: none; margin-bottom: 8px;">
+        <textarea id="prompt" data-i18n-placeholder="promptPlaceholder" placeholder="Describe the scene..." style="height: 90px; margin-bottom: 0;"></textarea>
+        <div id="enhanced-prompt-display" style="display: none; margin-top: 6px; margin-bottom: 8px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                 <label style="font-size: 11px; color: var(--accent); font-weight: bold;" data-i18n="enhancedPromptLabel">Enhanced Prompt</label>
                 <button type="button" id="clear-enhanced-btn" onclick="clearEnhancedPrompt()" class="btn-outline" style="font-size: 10px; padding: 2px 8px;" data-i18n="clearEnhanced">Clear</button>
             </div>
             <div id="enhanced-prompt-text" style="font-size: 11px; padding: 8px; background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.2); border-radius: 8px; color: var(--text); line-height: 1.5; max-height: 120px; overflow-y: auto; white-space: pre-wrap;"></div>
+        </div>
+        <!-- Negative Prompt (collapsible) -->
+        <div id="negative-prompt-section" style="margin-top: 4px; margin-bottom: 4px;">
+            <div style="display: flex; align-items: center; gap: 6px; cursor: pointer;" onclick="toggleNegativePrompt()">
+                <svg id="neg-prompt-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s; transform: rotate(0deg);">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+                <label style="margin-bottom: 0; cursor: pointer; font-size: 10px; color: var(--text-dim);" data-i18n="negativePromptLabel">Negative Prompt</label>
+            </div>
+            <div id="negative-prompt-body" style="display: none; margin-top: 4px;">
+                <textarea id="negative-prompt" data-i18n-placeholder="negativePromptPh" placeholder="low quality, blurry, noisy..." style="height: 50px; font-size: 11px; margin-bottom: 0;">low quality, blurry, noisy, static noise, distorted</textarea>
+            </div>
         </div>
     </div>
 
@@ -206,7 +228,28 @@
                 <label for="vid-audio" data-i18n="audioGen">生成 AI 环境音 (Audio Gen)</label>
             </div>
 
-            <label style="margin-top: 12px;" data-i18n="selectModel">选择模型</label>
+            <!-- Inference Steps -->
+            <div style="margin-top: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <label style="margin-bottom: 0;" data-i18n="inferenceStepsLabel">Inference Steps</label>
+                    <span style="font-size: 11px; color: var(--accent); font-weight: 600;" id="inference-steps-val">8</span>
+                </div>
+                <input type="range" id="vid-inference-steps" min="1" max="50" value="8" style="width: 100%; margin-top: 4px;"
+                       oninput="document.getElementById('inference-steps-val').innerText=this.value; localStorage.setItem('inference_steps', this.value);">
+                <div style="font-size: 10px; color: var(--text-dim); margin-top: 2px;" data-i18n="inferenceStepsHint">More steps = higher quality but slower. Fast default 8, Pro default 20</div>
+            </div>
+
+            <!-- Seed Control -->
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <label data-i18n="seedLabel">Seed</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="seed-value" value="42" min="0" max="2147483647" style="flex: 1; height: 32px; font-size: 11px; margin-bottom: 0;" disabled>
+                    <button type="button" id="seed-lock-btn" onclick="toggleSeedLock()" class="btn-outline" style="font-size: 11px; padding: 4px 10px; min-width: 60px; white-space: nowrap;" data-i18n="seedUnlocked">Random</button>
+                </div>
+                <div style="font-size: 10px; color: var(--text-dim); margin-top: 4px;" data-i18n="seedHint">Lock to reproduce the same result with identical settings</div>
+            </div>
+
+            <label style="margin-top: 4px;" data-i18n="selectModel">选择模型</label>
             <select id="vid-model" style="margin-bottom: 8px;">
                 <option value="" data-i18n="defaultModel">使用默认模型</option>
             </select>
@@ -408,6 +451,17 @@
                 </div>
             </div>
             <div id="batch-res-preview" class="res-preview-tag" style="margin-top: -5px; margin-bottom: 12px;">最终发送: 1280x704</div>
+
+            <!-- Batch Inference Steps -->
+            <div style="margin-bottom: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <label style="margin-bottom: 0;" data-i18n="inferenceStepsLabel">Inference Steps</label>
+                    <span style="font-size: 11px; color: var(--accent); font-weight: 600;" id="batch-inference-steps-val">8</span>
+                </div>
+                <input type="range" id="batch-inference-steps" min="1" max="50" value="8" style="width: 100%; margin-top: 4px;"
+                       oninput="document.getElementById('batch-inference-steps-val').innerText=this.value; localStorage.setItem('batch_inference_steps', this.value);">
+                <div style="font-size: 10px; color: var(--text-dim); margin-top: 2px;" data-i18n="inferenceStepsHint">More steps = higher quality but slower. Fast default 8, Pro default 20</div>
+            </div>
 
             <label data-i18n="selectModel">选择模型</label>
             <select id="batch-model" style="margin-bottom: 8px;">

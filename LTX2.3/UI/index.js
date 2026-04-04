@@ -149,9 +149,11 @@
         const prompt = promptEl ? promptEl.value.trim() : '';
         if (!prompt || !btn) return;
 
-        const origText = btn.textContent;
-        btn.textContent = _t('enhancing');
-        btn.disabled = true;
+        const spanEl = btn.querySelector('span');
+        const origText = spanEl ? spanEl.textContent : btn.textContent;
+        if (spanEl) spanEl.textContent = _t('enhancing');
+        else btn.textContent = _t('enhancing');
+        btn.classList.add('enhancing');
 
         try {
             const endpoint = (document.getElementById('lm-studio-url') || {}).value || 'http://localhost:1234/v1/chat/completions';
@@ -182,8 +184,9 @@
         } catch (e) {
             addLog('❌ ' + _t('logLmStudioConnectFail') + ': ' + (e.message || e));
         } finally {
-            btn.textContent = origText;
-            btn.disabled = false;
+            if (spanEl) spanEl.textContent = origText;
+            else btn.textContent = origText;
+            btn.classList.remove('enhancing');
         }
     }
     window.enhancePrompt = enhancePrompt;
@@ -199,6 +202,114 @@
         if (_enhancedPromptText) return _enhancedPromptText;
         const promptEl = document.getElementById('prompt');
         return promptEl ? promptEl.value.trim() : '';
+    }
+
+    // Handle enhance button click - opens settings if LM Studio not configured
+    function handleEnhanceClick() {
+        const toggle = document.getElementById('lm-studio-enabled');
+        if (toggle && toggle.checked) {
+            enhancePrompt();
+        } else {
+            // Open settings panel and highlight LM Studio section
+            const settingsPanel = document.getElementById('sys-settings');
+            if (settingsPanel) settingsPanel.style.display = 'block';
+            const lmSection = document.getElementById('lm-studio-enabled');
+            if (lmSection) {
+                const container = lmSection.closest('div[style*="margin-top: 12px"]');
+                if (container) {
+                    container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    container.classList.add('lm-studio-highlight');
+                    setTimeout(() => container.classList.remove('lm-studio-highlight'), 2500);
+                }
+            }
+            addLog(_t('lmStudioNotConfigured'));
+        }
+    }
+    window.handleEnhanceClick = handleEnhanceClick;
+
+    // Negative prompt toggle
+    function toggleNegativePrompt() {
+        const body = document.getElementById('negative-prompt-body');
+        const chevron = document.getElementById('neg-prompt-chevron');
+        if (!body) return;
+        const isOpen = body.style.display !== 'none';
+        body.style.display = isOpen ? 'none' : 'block';
+        if (chevron) chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
+    }
+    window.toggleNegativePrompt = toggleNegativePrompt;
+
+    // Helper to get negative prompt value
+    function getNegativePrompt() {
+        const el = document.getElementById('negative-prompt');
+        return (el && el.value.trim()) || 'low quality, blurry, noisy, static noise, distorted';
+    }
+
+    // Seed control
+    let _seedLocked = false;
+
+    async function initSeedControl() {
+        try {
+            const res = await fetch(`${BASE}/api/system/seed-settings`);
+            const data = await res.json();
+            _seedLocked = !!data.seed_locked;
+            const input = document.getElementById('seed-value');
+            if (input) input.value = data.locked_seed || 42;
+            applySeedLockUI();
+        } catch (e) { console.log('seed init error', e); }
+    }
+
+    function applySeedLockUI() {
+        const input = document.getElementById('seed-value');
+        const btn = document.getElementById('seed-lock-btn');
+        if (!input || !btn) return;
+        if (_seedLocked) {
+            input.disabled = false;
+            btn.textContent = _t('seedLocked');
+            btn.style.background = 'var(--accent)';
+            btn.style.color = '#fff';
+            btn.style.borderColor = 'var(--accent)';
+        } else {
+            input.disabled = true;
+            btn.textContent = _t('seedUnlocked');
+            btn.style.background = '';
+            btn.style.color = '';
+            btn.style.borderColor = '';
+        }
+    }
+
+    async function toggleSeedLock() {
+        _seedLocked = !_seedLocked;
+        applySeedLockUI();
+        const seed = parseInt(document.getElementById('seed-value').value) || 42;
+        try {
+            await fetch(`${BASE}/api/system/seed-settings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ seed_locked: _seedLocked, locked_seed: seed })
+            });
+        } catch (e) { addLog('Seed save error: ' + e.message); }
+    }
+    window.toggleSeedLock = toggleSeedLock;
+
+    // Upscaler toggle
+    async function initUpscalerToggle() {
+        const toggle = document.getElementById('upscaler-toggle');
+        if (!toggle) return;
+        try {
+            const res = await fetch(`${BASE}/api/system/upscaler`);
+            const data = await res.json();
+            toggle.checked = data.enabled !== false;
+        } catch (e) { /* default checked */ }
+        toggle.addEventListener('change', async function () {
+            try {
+                await fetch(`${BASE}/api/system/upscaler`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: this.checked })
+                });
+                addLog(this.checked ? _t('upscalerToggle') + ' ON' : _t('upscalerToggle') + ' OFF');
+            } catch (e) { addLog('Upscaler error: ' + e.message); }
+        });
     }
 
     // LM Studio model list fetch
@@ -236,7 +347,7 @@
         function applyToggle() {
             const enabled = toggle.checked;
             if (settingsDiv) settingsDiv.style.display = enabled ? 'block' : 'none';
-            if (enhanceBtn) enhanceBtn.style.display = enabled ? 'inline-block' : 'none';
+            if (enhanceBtn) enhanceBtn.classList.toggle('disabled', !enabled);
             localStorage.setItem('lm_studio_enabled', enabled ? '1' : '0');
         }
         toggle.addEventListener('change', applyToggle);
@@ -397,6 +508,41 @@
             scanLoras();
             initBatchDropdowns();
             initLmStudioToggle();
+            initSeedControl();
+            initUpscalerToggle();
+
+            // Restore localStorage values for new controls
+            const savedSteps = localStorage.getItem('inference_steps');
+            if (savedSteps) {
+                const el = document.getElementById('vid-inference-steps');
+                const val = document.getElementById('inference-steps-val');
+                if (el) { el.value = savedSteps; if (val) val.innerText = savedSteps; }
+            }
+            const savedBatchSteps = localStorage.getItem('batch_inference_steps');
+            if (savedBatchSteps) {
+                const el = document.getElementById('batch-inference-steps');
+                const val = document.getElementById('batch-inference-steps-val');
+                if (el) { el.value = savedBatchSteps; if (val) val.innerText = savedBatchSteps; }
+            }
+            const savedNeg = localStorage.getItem('negative_prompt');
+            if (savedNeg) { const el = document.getElementById('negative-prompt'); if (el) el.value = savedNeg; }
+            // Save negative prompt on change
+            const negEl = document.getElementById('negative-prompt');
+            if (negEl) negEl.addEventListener('blur', () => localStorage.setItem('negative_prompt', negEl.value));
+            // Save seed value on change
+            const seedValEl = document.getElementById('seed-value');
+            if (seedValEl) seedValEl.addEventListener('change', async function () {
+                if (!_seedLocked) return;
+                const seed = parseInt(this.value) || 42;
+                try {
+                    await fetch(`${BASE}/api/system/seed-settings`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ seed_locked: _seedLocked, locked_seed: seed })
+                    });
+                } catch (e) { /* silent */ }
+            });
+
             // Wire save & scan button
             const saveScanBtn = document.getElementById('save-scan-dirs-btn');
             if (saveScanBtn) saveScanBtn.addEventListener('click', saveAndScanDirs);
@@ -1623,7 +1769,8 @@
                 payload = {
                     prompt: effectivePrompt, resolution: res, model: "ltx-2",
                     cameraMotion: document.getElementById('vid-motion').value,
-                    negativePrompt: "low quality, blurry, noisy, static noise, distorted",
+                    negativePrompt: getNegativePrompt(),
+                    inferenceSteps: parseInt(document.getElementById('vid-inference-steps').value) || 8,
                     duration: String(dur), fps, audio,
                     imagePath: finalImagePath,
                     audioPath: audioPath || null,
@@ -1699,7 +1846,8 @@
                         resolution: res,
                         model: "ltx-2",
                         cameraMotion: document.getElementById('vid-motion').value,
-                        negativePrompt: "low quality, blurry, noisy, static noise, distorted",
+                        negativePrompt: getNegativePrompt(),
+                        inferenceSteps: parseInt(document.getElementById('batch-inference-steps').value) || 8,
                         duration: String(dur),
                         fps,
                         audio: "false",
@@ -1744,7 +1892,8 @@
                         modelPath: modelPath || null,
                         loraPath: loraPath || null,
                         loraStrength: loraStrength,
-                        negativePrompt: "low quality, blurry, noisy, static noise, distorted",
+                        negativePrompt: getNegativePrompt(),
+                        inferenceSteps: parseInt(document.getElementById('batch-inference-steps').value) || 8,
                         backgroundAudioPath: backgroundAudioPath || null
                     };
                     addLog(_t('logBatchSegments').replace('{spec}', `${segments.length} segments, ${res}${backgroundAudioPath ? ' + BGM' : ''}`));
