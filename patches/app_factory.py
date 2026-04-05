@@ -24,6 +24,7 @@ import shutil
 import tempfile
 import time
 from api_types import (
+    GenerateVideoCompleteResponse,
     GenerateVideoRequest,
     GenerateVideoResponse,
     ImageConditioningInput,
@@ -2405,7 +2406,7 @@ def create_app(
                         },
                     )
 
-            return GenerateVideoResponse(status="complete", video_path=final_path)
+            return GenerateVideoCompleteResponse(status="complete", video_path=final_path)
         except Exception as e:
             import traceback
 

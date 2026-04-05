@@ -10,7 +10,11 @@
       "Bash(grep -rn --include=\"*.py\" --include=\"*.js\" --include=\"*.html\" --include=\"*.json\" --include=\"*.md\" --include=\"*.bat\" --include=\"*.txt\" \"[$\\(printf '\\\\\\\\u4e00-\\\\\\\\u9fff'\\)]\" /c/github_projects/LTX2.3-Multifunctional/LTX2.3/)",
       "Bash(xargs ls:*)",
       "Bash(find . -type f \\\\\\( -name \"*.py\" -o -name \"*.js\" -o -name \"*.html\" -o -name \"*.md\" -o -name \"*.txt\" -o -name \"*.json\" \\\\\\) -exec grep -l \"[$\\(printf '\\\\\\\\u4e00-\\\\\\\\u9fff'\\)]\" {} \\\\;)",
-      "Bash(wc -l /c/github_projects/LTX2.3-Multifunctional/LTX2.3/patches/*.py)"
+      "Bash(wc -l /c/github_projects/LTX2.3-Multifunctional/LTX2.3/patches/*.py)",
+      "Bash(python \"C:/Users/Default.LivingRoomPC/.claude/skills/conversation-compiler/VCC.py\" \"C:/Users/Default.LivingRoomPC/.claude/projects/c--github-projects-LTX2-3-Multifunctional/c9a1325c-466d-420b-ae11-3e12c72a3e6e.jsonl\")",
+      "Bash(python \"C:/Users/Default.LivingRoomPC/.claude/skills/conversation-compiler/scripts/VCC.py\" \"C:/Users/Default.LivingRoomPC/.claude/projects/c--github-projects-LTX2-3-Multifunctional/c9a1325c-466d-420b-ae11-3e12c72a3e6e.jsonl\")",
+      "Read(//c/Users/Default.LivingRoomPC/AppData/Local/Programs/LTX Desktop/resources/backend/**)",
+      "Read(//tmp/**)"
     ]
   }
 }

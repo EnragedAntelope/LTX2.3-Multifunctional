@@ -23,11 +23,10 @@ run.bat
 
 ### Key Directories
 
-- **`LTX2.3/`** — Active working version (all edits go here)
-- **`LTX2.3-1.0.3/`** — Legacy snapshot (frozen, do not edit)
-- **`LTX2.3/patches/`** — Python files that override LTX Desktop backend modules via PYTHONPATH priority
-- **`LTX2.3/UI/`** — Vanilla JS/HTML/CSS frontend (no framework, no build step)
-- **`LTX2.3/LTX_Shortcut/`** — User places their LTX Desktop `.lnk` shortcut here for path resolution
+- **`patches/`** — Python files that override LTX Desktop backend modules via PYTHONPATH priority
+- **`UI/`** — Vanilla JS/HTML/CSS frontend (no framework, no build step)
+- **`LTX_Shortcut/`** — User places their LTX Desktop `.lnk` shortcut here for path resolution
+- **`archive/`** — Frozen legacy snapshots (do not edit)
 
 ### Patch Injection Mechanism
 
@@ -89,6 +88,8 @@ These are the official backend routers imported by our patched `app_factory.py`:
 | `/api/models-dir` | GET/POST | Custom models directory + text encoder toggle |
 | `/api/loras` | GET | Scan LoRA files (.safetensors, .ckpt, .pt, .bin) |
 | `/api/models` | GET | Scan model checkpoints (overrides official router) |
+| `/api/system/seed-settings` | GET/POST | Read/write seed lock state and locked seed value |
+| `/api/system/upscaler` | GET/POST | Toggle built-in upscaler on/off |
 
 ### Backend Model Types (from `api_types.py`)
 
@@ -132,32 +133,37 @@ The `should_use_local_encoding()` method on `TextHandler` decides which path to 
 - **Error messages** follow the pattern: `"English message / 中文消息"`
 - **All Chinese code comments** should have English translations appended
 
+## Completed Work
+
+### Collapse Folder Structure (done 2026-04-05)
+Removed the `LTX2.3/` and `LTX2.3-1.0.3/` subdirectory nesting. The root now contains `patches/`, `UI/`, `main.py`, `run.bat` directly. Old code archived in `archive/`.
+
+### Expose Unexposed Backend Features (done 2026-04-05)
+Implemented the following features in the UI:
+- **Inference steps slider** — Range 1-50, default 8 (fast) / 20 (pro), in video + batch modes
+- **Negative prompt customization** — Collapsible textarea, replaces hardcoded default
+- **Seed control** — Lock/unlock with backend persistence via `/api/system/seed-settings`
+- **Upscaler toggle** — Checkbox in settings with backend persistence via `/api/system/upscaler`
+- **LM Studio prompt enhancement discoverability** — Always-visible "Enhance" button, guides to settings when unconfigured
+
 ## Future Work (Do Not Implement Yet — Log Only)
 
-### 1. Collapse Folder Structure
-Remove the `LTX2.3/` and `LTX2.3-1.0.3/` subdirectory nesting. Pin the repo to a specific LTX Desktop version (currently v1.0.4, the latest as of 2026-04-04). The root should contain `patches/`, `UI/`, `main.py`, `run.bat` directly — no version-numbered subfolders.
-
-### 2. Rewrite README
+### 1. Rewrite README
 The current README is a mix of changelog entries, troubleshooting steps, and Chinese/English paragraphs in no clear order. Rewrite for clarity:
 - Concise feature list
 - Precise install steps (1. install LTX Desktop v1.0.4, 2. copy shortcut, 3. run.bat)
 - System requirements (VRAM, Windows, etc.)
 - Move troubleshooting to a separate section or file
 
-### 3. Expose Unexposed Backend Features
-The LTX Desktop backend supports several features not currently surfaced in our UI:
-
-- **Inference steps control**: `inferenceSteps` field exists in `GenerateVideoRequest` and the handler reads it, but the UI never sends it. Add a steps slider/input (default 8 for fast, 20 for pro).
-- **Fast vs Pro model selection**: The backend has `fast_model` and `pro_model` configs with separate step counts and upscaler toggles. The UI hardcodes `model: "ltx-2"` (which maps to fast). Expose a fast/pro toggle.
-- **Distilled model**: `distilled_lora` is a model file type; the retake pipeline uses `distilled=True`. Investigate whether users can opt into distilled mode for faster generation at lower quality.
-- **IC-LoRA (image conditioning)**: Full canny/depth conditioning pipeline exists (`/api/ic-lora/extract`, `/api/ic-lora/generate`). Not exposed in the UI at all.
-- **Retake/segment replace**: `/api/retake` endpoint exists for replacing segments of generated videos. Not surfaced.
-- **Upscaler toggle**: `use_upscaler` exists per-model in settings. Currently only toggled by low-VRAM mode. Could be a user preference.
-- **Camera motion prompts**: Backend appends camera motion text to prompts via `config.camera_motion_prompts`. The UI sends `cameraMotion` but users can't see what text is appended.
-- **Negative prompt customization**: Currently hardcoded to `"low quality, blurry, noisy, static noise, distorted"`. Should be user-editable.
-- **Torch compile**: `use_torch_compile` exists in settings but isn't exposed. Can improve inference speed on supported GPUs.
+### 2. Remaining Unexposed Backend Features
+These backend features still lack UI exposure:
+- **Fast vs Pro model selection**: The backend has `fast_model` and `pro_model` configs. The UI hardcodes `model: "ltx-2"` (fast). Expose a fast/pro toggle.
+- **Distilled model**: `distilled_lora` is a model file type; the retake pipeline uses `distilled=True`. Investigate whether users can opt into distilled mode.
+- **IC-LoRA (image conditioning)**: Full canny/depth conditioning pipeline exists (`/api/ic-lora/extract`, `/api/ic-lora/generate`). Not exposed.
+- **Retake/segment replace**: `/api/retake` endpoint exists. Not surfaced.
+- **Camera motion prompts**: Backend appends camera motion text to prompts. Users can't see what text is appended.
+- **Torch compile**: `use_torch_compile` exists in settings but isn't exposed.
 - **Prompt cache size**: `prompt_cache_size` in settings, not exposed.
-- **Seed control**: `seed_locked` and `locked_seed` exist in settings. The UI doesn't expose seed locking.
 
-### 4. Local Text Encoder Selection
+### 3. Local Text Encoder Selection
 Currently the backend only supports one local text encoder (the bundled Gemma model). The toggle is binary: local Gemma vs API (Gemini). If LTX Desktop ever adds support for alternative local text encoders (e.g., different model sizes, quantized versions, or entirely different encoder architectures), we want to surface that selection in the UI. Monitor `TextHandler`, `resolve_gemma_root()`, and `model_download_specs` for changes in future LTX Desktop releases.

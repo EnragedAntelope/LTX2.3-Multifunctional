@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING
 from PIL import Image
 
 from api_types import (
+    GenerateVideoCompleteResponse,
+    GenerateVideoCancelledResponse,
     GenerateVideoRequest,
     GenerateVideoResponse,
     ImageConditioningInput,
@@ -340,13 +342,13 @@ class VideoGenerationHandler(StateHandlerBase):
             )
 
             self._generation.complete_generation(output_path)
-            return GenerateVideoResponse(status="complete", video_path=output_path)
+            return GenerateVideoCompleteResponse(status="complete", video_path=output_path)
 
         except Exception as e:
             self._generation.fail_generation(str(e))
             if "cancelled" in str(e).lower():
                 logger.info("Generation cancelled by user")
-                return GenerateVideoResponse(status="cancelled")
+                return GenerateVideoCancelledResponse(status="cancelled")
 
             raise HTTPError(500, str(e)) from e
 
@@ -614,13 +616,13 @@ class VideoGenerationHandler(StateHandlerBase):
 
             self._generation.update_progress("complete", 100, total_steps, total_steps)
             self._generation.complete_generation(str(output_path))
-            return GenerateVideoResponse(status="complete", video_path=str(output_path))
+            return GenerateVideoCompleteResponse(status="complete", video_path=str(output_path))
 
         except Exception as e:
             self._generation.fail_generation(str(e))
             if "cancelled" in str(e).lower():
                 logger.info("Generation cancelled by user")
-                return GenerateVideoResponse(status="cancelled")
+                return GenerateVideoCancelledResponse(status="cancelled")
             raise HTTPError(500, str(e)) from e
         finally:
             self._text.clear_api_embeddings()
@@ -837,7 +839,7 @@ class VideoGenerationHandler(StateHandlerBase):
 
             self._generation.update_progress("complete", 100, None, None)
             self._generation.complete_generation(str(output_path))
-            return GenerateVideoResponse(status="complete", video_path=str(output_path))
+            return GenerateVideoCompleteResponse(status="complete", video_path=str(output_path))
         except HTTPError as e:
             self._generation.fail_generation(e.detail)
             raise
@@ -845,7 +847,7 @@ class VideoGenerationHandler(StateHandlerBase):
             self._generation.fail_generation(str(e))
             if "cancelled" in str(e).lower():
                 logger.info("Generation cancelled by user")
-                return GenerateVideoResponse(status="cancelled")
+                return GenerateVideoCancelledResponse(status="cancelled")
             raise HTTPError(500, str(e)) from e
 
     def _write_forced_api_video(self, video_bytes: bytes) -> Path:
