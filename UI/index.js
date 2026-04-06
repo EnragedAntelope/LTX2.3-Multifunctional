@@ -544,6 +544,38 @@
             // Wire save & scan button
             const saveScanBtn = document.getElementById('save-scan-dirs-btn');
             if (saveScanBtn) saveScanBtn.addEventListener('click', saveAndScanDirs);
+
+            // Auto-save + auto-scan when dir inputs change
+            const loraDirEl = document.getElementById('custom-lora-dir');
+            if (loraDirEl) {
+                loraDirEl.addEventListener('blur', async () => {
+                    const loraDir = loraDirEl.value.trim();
+                    try {
+                        await fetch(`${BASE}/api/lora-dir`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ loraDir })
+                        });
+                    } catch (e) { /* silent */ }
+                    if (loraDir) scanLoras();
+                });
+            }
+
+            const modelsDirEl = document.getElementById('custom-models-dir');
+            if (modelsDirEl) {
+                modelsDirEl.addEventListener('blur', async () => {
+                    const modelsDir = modelsDirEl.value.trim();
+                    const useLocalEncoder = !!(document.getElementById('local-text-encoder-toggle') || {}).checked;
+                    try {
+                        await fetch(`${BASE}/api/models-dir`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ modelsDir, useLocalTextEncoder: useLocalEncoder })
+                        });
+                    } catch (e) { /* silent */ }
+                    if (modelsDir) scanModels();
+                });
+            }
         }, 1500);
     })();
 
