@@ -651,8 +651,6 @@ def create_app(
             try:
                 md = getattr(handler.pipelines, "models_dir", None)
                 if md:
-                    from pathlib import Path
-
                     root = Path(str(md)).expanduser().resolve() / "loras"
                     raw = str(root)
             except Exception:
