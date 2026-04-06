@@ -20,7 +20,7 @@
   "locked_seed": 42,
   "models_dir": "",
   "lm_studio_enabled": false,
-  "lm_studio_endpoint": "http://localhost:1234/v1/chat/completions",
+  "lm_studio_base_url": "http://localhost:1234",
   "lm_studio_model": "",
   "lm_studio_context_length": 4096,
   "lm_studio_temperature": 0.7,

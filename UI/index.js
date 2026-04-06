@@ -156,7 +156,7 @@
         btn.classList.add('enhancing');
 
         try {
-            const endpoint = (document.getElementById('lm-studio-url') || {}).value || 'http://localhost:1234/v1/chat/completions';
+            const base_url = ((document.getElementById('lm-studio-url') || {}).value || 'http://localhost:1234').trim();
             const model = (document.getElementById('lm-studio-model') || {}).value || '';
             const context_length = parseInt((document.getElementById('lm-studio-ctx') || {}).value) || 4096;
             const temperature = parseFloat((document.getElementById('lm-studio-temp') || {}).value) || 0.7;
@@ -166,7 +166,7 @@
             const res = await fetch(`${BASE}/api/system/enhance-prompt`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, endpoint, model, context_length, temperature, unload_after, strip_thinking })
+                body: JSON.stringify({ prompt, base_url, model, context_length, temperature, unload_after, strip_thinking })
             });
             const data = await res.json();
             if (data.status === 'ok' && data.enhanced_prompt) {
@@ -312,26 +312,30 @@
         });
     }
 
-    // LM Studio model list fetch
+    // LM Studio model list fetch — proxied through backend to avoid browser CORS/mixed-content issues
     async function fetchLmStudioModels() {
         const urlInput = document.getElementById('lm-studio-url');
         if (!urlInput) return;
-        const baseUrl = urlInput.value.replace(/\/chat\/completions\/?$/, '/models');
+        const baseUrl = urlInput.value.trim() || 'http://localhost:1234';
+        const select = document.getElementById('lm-studio-model');
+        if (!select) return;
         try {
-            const res = await fetch(baseUrl);
+            const res = await fetch(`${BASE}/api/system/lm-studio-models?base_url=${encodeURIComponent(baseUrl)}`);
             const data = await res.json();
-            const select = document.getElementById('lm-studio-model');
-            if (!select) return;
+            if (data.error) {
+                addLog(`❌ ${_t('logLmStudioConnectFail')}: ${data.error}`);
+                return;
+            }
             const currentVal = select.value;
             select.innerHTML = '<option value="">' + _t('lmAutoModel') + '</option>';
-            (data.data || []).forEach(m => {
+            (data.models || []).forEach(m => {
                 const opt = document.createElement('option');
                 opt.value = m.id;
                 opt.textContent = m.id;
                 select.appendChild(opt);
             });
             if (currentVal) select.value = currentVal;
-            addLog(`📂 LM Studio: ${(data.data || []).length} model(s) found`);
+            addLog(`📂 LM Studio: ${(data.models || []).length} model(s) available`);
         } catch (e) {
             addLog(`❌ ${_t('logLmStudioConnectFail')}: ${e.message || e}`);
         }
@@ -349,12 +353,26 @@
             if (settingsDiv) settingsDiv.style.display = enabled ? 'block' : 'none';
             if (enhanceBtn) enhanceBtn.classList.toggle('disabled', !enabled);
             localStorage.setItem('lm_studio_enabled', enabled ? '1' : '0');
+            // Auto-fetch model list when section is opened
+            if (enabled) fetchLmStudioModels();
         }
         toggle.addEventListener('change', applyToggle);
 
         // Restore saved state
         toggle.checked = localStorage.getItem('lm_studio_enabled') === '1';
-        applyToggle();
+
+        // Restore URL — migrate old lm_studio_endpoint key if present
+        const urlEl = document.getElementById('lm-studio-url');
+        if (urlEl) {
+            const savedUrl = localStorage.getItem('lm_studio_base_url')
+                || (() => {
+                    // Migrate: strip /v1/chat/completions suffix from old key
+                    const old = localStorage.getItem('lm_studio_endpoint');
+                    if (old) return old.replace(/\/v1\/chat\/completions\/?$/, '').replace(/\/v1\/.*$/, '');
+                    return null;
+                })();
+            if (savedUrl) urlEl.value = savedUrl;
+        }
 
         // Restore other LM Studio settings from localStorage
         const savedModel = localStorage.getItem('lm_studio_model');
@@ -371,11 +389,9 @@
         if (savedUnload !== null) { const el = document.getElementById('lm-studio-unload'); if (el) el.checked = savedUnload === '1'; }
         const savedStrip = localStorage.getItem('lm_studio_strip_think');
         if (savedStrip !== null) { const el = document.getElementById('lm-studio-strip-think'); if (el) el.checked = savedStrip !== '0'; }
-        const savedEndpoint = localStorage.getItem('lm_studio_endpoint');
-        if (savedEndpoint) { const el = document.getElementById('lm-studio-url'); if (el) el.value = savedEndpoint; }
 
         // Save LM Studio settings on change
-        ['lm-studio-model', 'lm-studio-ctx', 'lm-studio-temp', 'lm-studio-unload', 'lm-studio-strip-think', 'lm-studio-url'].forEach(id => {
+        ['lm-studio-ctx', 'lm-studio-temp', 'lm-studio-unload', 'lm-studio-strip-think'].forEach(id => {
             const el = document.getElementById(id);
             if (!el) return;
             el.addEventListener('change', () => {
@@ -388,9 +404,23 @@
             }
         });
 
+        // Save model selection
+        const modelEl = document.getElementById('lm-studio-model');
+        if (modelEl) modelEl.addEventListener('change', () => localStorage.setItem('lm_studio_model', modelEl.value));
+
+        // Save base URL and re-fetch models when URL changes
+        if (urlEl) {
+            urlEl.addEventListener('change', () => {
+                localStorage.setItem('lm_studio_base_url', urlEl.value.trim());
+                fetchLmStudioModels();
+            });
+        }
+
         // Wire refresh button
         const refreshBtn = document.getElementById('lm-studio-refresh-models');
         if (refreshBtn) refreshBtn.addEventListener('click', fetchLmStudioModels);
+
+        applyToggle();
     }
 
     function updateLoraDropdown() {

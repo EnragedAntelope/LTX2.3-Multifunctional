@@ -169,8 +169,10 @@
             seedHint: '锁定后可在相同参数下复现结果',
             upscalerToggle: '启用内置超分',
             upscalerDesc: '关闭可减少显存占用，下次生成时生效',
-            lmStudioEndpoint: 'LM Studio 端点',
-            lmStudioUrlPh: 'http://localhost:1234/v1/chat/completions',
+            lmStudioBaseUrl: 'LM Studio 地址',
+            lmStudioUrlPh: 'http://localhost:1234',
+            lmModelsAvailable: '可用模型数: {n}',
+            lmUnloadSuccess: '模型已卸载',
             // --- Model / LoRA scan log messages ---
             logModelScanFail: '模型扫描失败',
             logModelsFound: '已扫描到 {n} 个模型: {list}',
@@ -424,8 +426,10 @@
             seedHint: 'Lock to reproduce the same result with identical settings',
             upscalerToggle: 'Enable built-in upscaler',
             upscalerDesc: 'Disabling reduces VRAM usage. Takes effect on next generation.',
-            lmStudioEndpoint: 'LM Studio endpoint',
-            lmStudioUrlPh: 'http://localhost:1234/v1/chat/completions',
+            lmStudioBaseUrl: 'LM Studio URL',
+            lmStudioUrlPh: 'http://localhost:1234',
+            lmModelsAvailable: '{n} model(s) available',
+            lmUnloadSuccess: 'Model unloaded',
             loraPlacementHintWithDir:
                 'Place LoRAs into the default models directory: <code>{dir}</code>\\loras',
             // --- Model / LoRA scan log messages ---

@@ -14,7 +14,9 @@
       "Bash(python \"C:/Users/Default.LivingRoomPC/.claude/skills/conversation-compiler/VCC.py\" \"C:/Users/Default.LivingRoomPC/.claude/projects/c--github-projects-LTX2-3-Multifunctional/c9a1325c-466d-420b-ae11-3e12c72a3e6e.jsonl\")",
       "Bash(python \"C:/Users/Default.LivingRoomPC/.claude/skills/conversation-compiler/scripts/VCC.py\" \"C:/Users/Default.LivingRoomPC/.claude/projects/c--github-projects-LTX2-3-Multifunctional/c9a1325c-466d-420b-ae11-3e12c72a3e6e.jsonl\")",
       "Read(//c/Users/Default.LivingRoomPC/AppData/Local/Programs/LTX Desktop/resources/backend/**)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(gh repo:*)",
+      "WebFetch(domain:api.github.com)"
     ]
   }
 }

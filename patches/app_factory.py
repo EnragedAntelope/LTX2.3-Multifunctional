@@ -813,9 +813,38 @@ def create_app(
             return FileResponse(str(resolved))
         return JSONResponse(status_code=404, content={"error": "File not found"})
 
+    @app.get("/api/system/lm-studio-models")
+    async def route_lm_studio_models(base_url: str = "http://localhost:1234"):
+        """Fetch available models from a running LM Studio instance."""
+        import urllib.request
+        import urllib.error
+        import json as _json
+        from starlette.concurrency import run_in_threadpool
+
+        base = base_url.rstrip("/")
+        models_url = f"{base}/v1/models"
+
+        def _fetch():
+            req = urllib.request.Request(models_url)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return _json.loads(resp.read().decode("utf-8"))
+
+        try:
+            data = await run_in_threadpool(_fetch)
+            models = [
+                {"id": m["id"]}
+                for m in (data.get("data") or [])
+                if "embed" not in m.get("id", "").lower()
+            ]
+            return {"status": "ok", "models": models}
+        except urllib.error.URLError:
+            return JSONResponse(status_code=503, content={"error": "Cannot connect to LM Studio. Is it running?"})
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"error": str(e)})
+
     @app.post("/api/system/enhance-prompt")
     async def route_enhance_prompt(request: Request):
-        """Enhance a simple prompt using a local LLM (LM Studio compatible)."""
+        """Enhance a simple prompt using a local LLM via LM Studio's OpenAI-compatible API."""
         import urllib.request
         import urllib.error
         import json as _json
@@ -825,7 +854,7 @@ def create_app(
         try:
             body = await request.json()
             prompt = body.get("prompt", "").strip()
-            endpoint = body.get("endpoint", "http://localhost:1234/v1/chat/completions").strip()
+            base_url = body.get("base_url", "http://localhost:1234").rstrip("/")
             model = body.get("model", "")
             context_length = int(body.get("context_length", 4096))
             temperature = float(body.get("temperature", 0.7))
@@ -834,6 +863,8 @@ def create_app(
 
             if not prompt:
                 return JSONResponse(status_code=400, content={"error": "No prompt provided"})
+
+            chat_url = f"{base_url}/v1/chat/completions"
 
             system_prompt = (
                 "You are a cinematic video prompt enhancer for LTX 2.3 AI video generation. "
@@ -854,14 +885,12 @@ def create_app(
             }
             if model:
                 req_body["model"] = model
-            if unload_after:
-                req_body["keep_alive"] = 0
 
             payload = _json.dumps(req_body).encode("utf-8")
 
             def _call_llm():
                 req = urllib.request.Request(
-                    endpoint,
+                    chat_url,
                     data=payload,
                     headers={"Content-Type": "application/json"},
                 )
@@ -871,10 +900,37 @@ def create_app(
             data = await run_in_threadpool(_call_llm)
             enhanced = data["choices"][0]["message"]["content"].strip()
 
-            # Strip thinking/reasoning blocks if requested
+            # Strip thinking/reasoning blocks (common in reasoning models)
             if strip_thinking:
-                enhanced = _re.sub(r'<think>.*?</think>', '', enhanced, flags=_re.DOTALL).strip()
-                enhanced = _re.sub(r'<reasoning>.*?</reasoning>', '', enhanced, flags=_re.DOTALL).strip()
+                for pattern in [
+                    r'<think>.*?</think>',
+                    r'<thinking>.*?</thinking>',
+                    r'<reasoning>.*?</reasoning>',
+                    r'<reason>.*?</reason>',
+                ]:
+                    enhanced = _re.sub(pattern, '', enhanced, flags=_re.DOTALL).strip()
+
+            # Unload the model after inference using LM Studio's native REST API
+            if unload_after:
+                model_used = data.get("model") or model
+                if model_used:
+                    unload_url = f"{base_url}/api/v0/models/unload"
+                    unload_payload = _json.dumps({"identifier": model_used}).encode("utf-8")
+
+                    def _unload():
+                        try:
+                            unload_req = urllib.request.Request(
+                                unload_url,
+                                data=unload_payload,
+                                headers={"Content-Type": "application/json"},
+                                method="POST",
+                            )
+                            with urllib.request.urlopen(unload_req, timeout=10):
+                                pass
+                        except Exception:
+                            pass  # Best-effort; don't fail the whole request
+
+                    await run_in_threadpool(_unload)
 
             return {"status": "ok", "enhanced_prompt": enhanced}
         except urllib.error.URLError:
