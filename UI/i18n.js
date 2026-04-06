@@ -271,6 +271,13 @@
             logRescanComplete: '扫描完成',
             logDirSaveError: '保存目录设置失败',
             logDirSaved: '目录设置已保存',
+            // --- Cancel ---
+            cancelGeneration: '取消生成',
+            cancellingGeneration: '正在取消...',
+            logCancelRequested: '已发送取消请求',
+            logCancelFailed: '取消请求失败',
+            // --- Image count ---
+            numImagesLabel: '生成数量',
         },
         en: {
             tabVideo: 'Video',
@@ -538,6 +545,13 @@
             logRescanComplete: 'Scan complete',
             logDirSaveError: 'Failed to save directory setting',
             logDirSaved: 'Directory settings saved',
+            // --- Cancel ---
+            cancelGeneration: 'Cancel',
+            cancellingGeneration: 'Cancelling...',
+            logCancelRequested: 'Cancel requested',
+            logCancelFailed: 'Cancel request failed',
+            // --- Image count ---
+            numImagesLabel: 'Count',
         },
     };
 

@@ -1870,6 +1870,8 @@
         // 先设置标志 + 禁用按钮，然后用顶层 try/finally 保证一定能解锁
         _isGeneratingFlag = true;
         btn.disabled = true;
+        const cancelBtn = document.getElementById('cancelBtn');
+        if (cancelBtn) cancelBtn.style.display = 'block';
 
         try {
             // 安全地操作 UI 元素（改用 if 判空，防止 Plyr 接管后 getElementById 返回 null）
@@ -1926,7 +1928,7 @@
                 payload = {
                     prompt: effectivePrompt, width: w, height: h,
                     numSteps: parseInt(document.getElementById('img-steps').value),
-                    numImages: 1
+                    numImages: parseInt(document.getElementById('img-num-images')?.value) || 1
                 };
                 addLog(`${_t('logRenderingImage')}: ${w}x${h}, Steps: ${payload.numSteps}`);
 
@@ -1960,7 +1962,7 @@
                 console.log("loraPath:", loraPath);
                 console.log("loraStrength:", loraStrength);
                 payload = {
-                    prompt: effectivePrompt, resolution: res, model: "ltx-2",
+                    prompt: effectivePrompt, resolution: res, model: "fast",
                     cameraMotion: document.getElementById('vid-motion').value,
                     negativePrompt: getNegativePrompt(),
                     inferenceSteps: parseInt(document.getElementById('vid-inference-steps').value) || 8,
@@ -2037,7 +2039,7 @@
                     payload = {
                         prompt: combinedPrompt,
                         resolution: res,
-                        model: "ltx-2",
+                        model: "fast",
                         cameraMotion: document.getElementById('vid-motion').value,
                         negativePrompt: getNegativePrompt(),
                         inferenceSteps: parseInt(document.getElementById('batch-inference-steps').value) || 8,
@@ -2080,7 +2082,7 @@
                     payload = {
                         segments: segments,
                         resolution: res,
-                        model: "ltx-2",
+                        model: "fast",
                         aspectRatio: document.getElementById('batch-ratio').value,
                         modelPath: modelPath || null,
                         loraPath: loraPath || null,
@@ -2134,10 +2136,24 @@
             // ✅ 无论发生什么，这里一定执行，确保按钮永远可以再次点击
             _isGeneratingFlag = false;
             btn.disabled = false;
+            const cancelBtnFin = document.getElementById('cancelBtn');
+            if (cancelBtnFin) { cancelBtnFin.style.display = 'none'; cancelBtnFin.disabled = false; cancelBtnFin.innerText = _t('cancelGeneration'); }
             stopProgressPolling();
             checkStatus();
             // 生成完毕后自动释放显存（不 await 避免阻塞 UI 解锁）
             setTimeout(() => { clearGpu(); }, 500);
+        }
+    }
+
+    async function cancelGeneration() {
+        const btn = document.getElementById('cancelBtn');
+        if (btn) { btn.disabled = true; btn.innerText = _t('cancellingGeneration'); }
+        try {
+            await fetch(`${BASE}/api/generate/cancel`, { method: 'POST' });
+            addLog(`⏹ ${_t('logCancelRequested')}`);
+        } catch (e) {
+            addLog(`❌ ${_t('logCancelFailed')}: ${e.message}`);
+            if (btn) { btn.disabled = false; btn.innerText = _t('cancelGeneration'); }
         }
     }
 

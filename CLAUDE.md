@@ -168,6 +168,12 @@ Implemented the following features in the UI:
 - **Upscaler toggle** — Checkbox in settings with backend persistence via `/api/system/upscaler`
 - **LM Studio prompt enhancement discoverability** — Always-visible "Enhance" button, guides to settings when unconfigured
 
+### Gap audit & fixes (done 2026-04-06)
+Audited all official LTX Desktop backend routes and settings against our UI. Changes made:
+- **Bug fix: `model` field** — All generation payloads were sending `"ltx-2"` (invalid for the API path); fixed to `"fast"`. Locally our patch ignores this, but in API-forced mode the official handler maps `"fast"` → `"ltx-2-3-fast"` and rejects unknown values.
+- **Cancel button** — Added "Cancel" button (`POST /api/generate/cancel`) that appears during generation and hides when done. The backend already had this endpoint; we had no UI for it.
+- **numImages for image generation** — Exposed as a number input (1–8) instead of hardcoded `1`.
+
 ## Future Work (Do Not Implement Yet — Log Only)
 
 ### 1. Rewrite README (done 2026-04-06)
@@ -175,7 +181,7 @@ Rewrote for clarity: concise feature list, install steps, system requirements, t
 
 ### 2. Remaining Unexposed Backend Features
 These backend features still lack UI exposure:
-- **Fast vs Pro model selection**: The backend has `fast_model` and `pro_model` configs. The UI hardcodes `model: "ltx-2"` (fast). Expose a fast/pro toggle.
+- **Fast vs Pro model selection**: Locally only `"fast"` works (the official handler raises `INVALID_LOCAL_MODEL` for anything else). Pro pipeline is used automatically for A2V. A UI toggle would only make sense in API-forced mode (LTX cloud). Low priority unless API mode becomes common.
 - **Distilled model**: `distilled_lora` is a model file type; the retake pipeline uses `distilled=True`. Investigate whether users can opt into distilled mode.
 - **IC-LoRA (image conditioning)**: Full canny/depth conditioning pipeline exists (`/api/ic-lora/extract`, `/api/ic-lora/generate`). Not exposed.
 - **Retake/segment replace**: `/api/retake` endpoint exists. Not surfaced.

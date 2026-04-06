@@ -351,6 +351,11 @@
         <div class="slider-container">
             <input type="range" id="img-steps" min="1" max="50" value="28" oninput="document.getElementById('stepsVal').innerText=this.value">
         </div>
+
+        <div class="label-group" style="margin-top: 12px; align-items: center;">
+            <label data-i18n="numImagesLabel">生成数量</label>
+            <input type="number" id="img-num-images" min="1" max="8" value="1" style="width: 60px; height: 28px; font-size: 11px; padding: 0 8px; text-align: center;">
+        </div>
     </div>
 
     <!-- 超分模式选项 -->
@@ -488,6 +493,7 @@
 
     <div style="padding: 0 30px 30px 30px;">
         <button class="btn-primary" id="mainBtn" onclick="run()" data-i18n="mainRender">开始渲染</button>
+        <button class="btn-outline" id="cancelBtn" onclick="cancelGeneration()" style="display:none; margin-top: 8px; width: 100%; color: #f87171; border-color: rgba(248,113,113,0.4);" data-i18n="cancelGeneration">Cancel</button>
     </div>
 </aside>
 
