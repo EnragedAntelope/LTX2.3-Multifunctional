@@ -170,12 +170,8 @@ Implemented the following features in the UI:
 
 ## Future Work (Do Not Implement Yet — Log Only)
 
-### 1. Rewrite README
-The current README is a mix of changelog entries, troubleshooting steps, and Chinese/English paragraphs in no clear order. Rewrite for clarity:
-- Concise feature list
-- Precise install steps (1. install LTX Desktop v1.0.4, 2. copy shortcut, 3. run.bat)
-- System requirements (VRAM, Windows, etc.)
-- Move troubleshooting to a separate section or file
+### 1. Rewrite README (done 2026-04-06)
+Rewrote for clarity: concise feature list, install steps, system requirements, troubleshooting section.
 
 ### 2. Remaining Unexposed Backend Features
 These backend features still lack UI exposure:
@@ -188,4 +184,12 @@ These backend features still lack UI exposure:
 - **Prompt cache size**: `prompt_cache_size` in settings, not exposed.
 
 ### 3. Local Text Encoder Selection
-Currently the backend only supports one local text encoder (the bundled Gemma model). The toggle is binary: local Gemma vs API (Gemini). If LTX Desktop ever adds support for alternative local text encoders (e.g., different model sizes, quantized versions, or entirely different encoder architectures), we want to surface that selection in the UI. Monitor `TextHandler`, `resolve_gemma_root()`, and `model_download_specs` for changes in future LTX Desktop releases.
+Currently the backend hardcodes one local text encoder: `gemma-3-12b-it-qat-q4_0-unquantized` (defined in `model_download_specs.py`, `"text_encoder"` key). The UI toggle is binary: local Gemma vs LTX API. The backend decision lives in `TextHandler.should_use_local_encoding()` (`text_handler.py`) — the `use_local_text_encoder` setting is **only a tiebreaker** when both API key and local encoder are present; if only one is available, the setting is ignored.
+
+**At each new LTX Desktop release, check for these signals that encoder selection is now possible:**
+- `model_download_specs.py`: does `"text_encoder"` become a dict/list of specs rather than a single `ModelFileDownloadSpec`?
+- `text_handler.py` → `resolve_gemma_root()`: does it accept a path or model-type parameter instead of always resolving the single spec?
+- `app_settings.py`: do new fields appear alongside `use_local_text_encoder` (e.g., `text_encoder_model`, `text_encoder_path`)?
+- Any new `TextEncoderStatus` enum values beyond binary local/API?
+
+When these signals appear, expose encoder selection in the UI (Settings panel, same area as the current local encoder toggle).

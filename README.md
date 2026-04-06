@@ -1,96 +1,80 @@
 # LTX2.3-Multifunctional
 
-THIS IS AN EXPERIMENTAL FORK FOR THE TIME BEING AND WILL BE RANDOMLY BROKEN AS NEW FEATURES ARE IMPLEMENTED.
+A bilingual (English/Chinese) UI wrapper and feature extension layer for **LTX Desktop** (Lightricks' local AI video generation app). Replaces the official Electron UI with a custom web interface and unlocks backend features not exposed by the official app.
 
+> **This is not a standalone app.** A working LTX Desktop installation is required as the rendering engine.
+>
+> **实验性项目 / Experimental project** — may break with LTX Desktop updates.
 
-Updated April 3, 2026:
+---
 
-Official version 1.0.4 has been released, significantly reducing video memory usage. Now, graphics cards with 12GB or more of video memory can run the program. Our tests show that, in a 10-second 720p frame test, the maximum video memory usage is only 13GB!
-Download Link: https://github.com/Lightricks/LTX-Desktop/releases/tag/v1.0.4
+## System Requirements / 系统要求
 
-----
+- **OS**: Windows (LTX Desktop is Windows-only)
+- **VRAM**: 12 GB minimum (LTX Desktop v1.0.4+). 24 GB recommended for longer videos.
+- **LTX Desktop**: v1.0.4 or later — [Download](https://ltx.io/ltx-desktop)
 
+---
 
-April 2, 2026 Update:
+## Installation / 安装
 
-1. Added LoRA functionality (place LoRA in the `loras` folder within the model directory).（Quick test LoRa: https://civitai.com/models/2482513/ltx23）
+1. Install **LTX Desktop v1.0.4+** from [ltx.io/ltx-desktop](https://ltx.io/ltx-desktop)
+2. Copy the LTX Desktop shortcut into the `LTX_Shortcut/` folder in this repo
+3. Run `run.bat`
+4. Open `http://localhost:4000` in your browser
 
-2. Added model selection capability (currently testing quantization to reduce GPU memory usage; modifying the model does not currently lower the GPU memory requirement, pending future updates).
+> 1. 安装 LTX Desktop v1.0.4+
+> 2. 将 LTX Desktop 快捷方式复制到 `LTX_Shortcut/` 文件夹
+> 3. 运行 `run.bat`
+> 4. 在浏览器中打开 `http://localhost:4000`
 
-3. Added multi-frame insertion functionality, with two generation modes: Mode 1: Inserts multiple frames into a latent space to directly generate a long video. Mode 2: Generates many independent first and last frame segments, which are then stitched together to form a complete video.
+---
 
--------
+## Features / 功能
 
+| Feature | Description |
+|---|---|
+| **LoRA support** | Load `.safetensors`/`.ckpt`/`.pt`/`.bin` LoRA files from a custom directory |
+| **Custom inference steps** | Override the default step count (1–50) per generation |
+| **Negative prompt** | Collapsible field to override the hardcoded default |
+| **Seed control** | Lock/unlock seed with backend persistence |
+| **Upscaler toggle** | Enable/disable the built-in upscaler per generation |
+| **Multi-GPU switching** | Select which CUDA device to use |
+| **Start / end frame** | Image-to-video with custom start and/or end frames |
+| **Batch keyframe generation** | Two modes: latent-space insertion or independent segment stitching |
+| **LM Studio prompt enhancement** | Enhance prompts locally via a running LM Studio instance |
+| **Local text encoder toggle** | Force local Gemma encoder instead of LTX API encoding |
+| **Bilingual UI** | Full English / Chinese interface, switch at runtime |
+| **Model selection** | Point to a custom model directory |
 
-Functionality optimization based on LTX desktop version
+---
 
-This program mainly optimizes the desktop version of LTX, breaking the generation time limitations and lowering the barrier to use. It now only requires 24GB to run, whereas the desktop version needs 32GB.
+## Troubleshooting / 常见问题
 
-Compared to the messy and complex workflows and error-prone nodes in the ComfyUI version, this one integrates all features, including image-to-video, text-to-video, start/end frames, lip-sync, video enhancement, and image generation.
+### GPU not used — system forces API mode / 系统强制使用 API 模式
 
-No need to install any third-party software—just install the LTX desktop version and you’re good to go. It’s very simple and efficient.
+**Symptom**: Generation goes through the FAL or LTX cloud API even though you have a local GPU.
 
-Tutorial: https://youtu.be/rM_wUogtrOU
+**Cause**: LTX Desktop requires 31 GB VRAM before it enables local generation by default.
 
-Desktop version software download address: https://ltx.io/ltx-desktop
+**Fix**: Run `API issues.bat` as Administrator (included in this repo). This patches the VRAM threshold and clears any stored API key that overrides local mode.
 
-It can be accessed via ComfyUI, node address: https://github.com/supart/ComfyUI_TY_LTX_Desktop_Bridge
+**Manual fix** (if the batch file doesn't work):
 
------------
+1. Edit `%LOCALAPPDATA%\LTXDesktop\settings.json` — set `"fal_api_key": ""`
+2. Edit `C:\Program Files\LTX Desktop\resources\backend\runtime_config\runtime_policy.py` line 16:
+   - Change `return vram_gb < 31` → `return vram_gb < 6`
+3. Restart LTX Desktop.
 
-1. 复制LTX桌面版的快捷方式到LTX_Shortcut
+---
 
-2. 运行run.bat
+## ComfyUI Bridge / ComfyUI 节点
 
-1. Copy the LTX desktop shortcut to LTX_Shortcut
+This backend can be accessed from ComfyUI via a community node:
+[ComfyUI_TY_LTX_Desktop_Bridge](https://github.com/supart/ComfyUI_TY_LTX_Desktop_Bridge)
 
-2. Run run.bat
-----
+---
 
+## Demo / 演示
 
-【问题描述 / Problem】
-系统强制使用 FAL API 生成图片，即使本地有 GPU 可用。
-System forces FAL API generation even when local GPU is available.
-
-【原因 / Cause】
-LTX 强制要求 GPU 有 31GB VRAM 才会使用本地显卡，低于此值会强制走 API 模式。
-LTX requires 31GB VRAM to use local GPU. Below this, it forces API mode.
-
-
-【修复方法 / Fix Method】
-
-
-运行: API issues.bat.bat (以管理员身份)
-Run: API issues.bat.bat (as Administrator)
-
-----
-
-【或者手动 / Or Manual】
-
-1. 修改 VRAM 阈值 / Modify VRAM Threshold
-   文件路径 / File: C:\Program Files\LTX Desktop\resources\backend\runtime_config\runtime_policy.py
-   第16行 / Line 16:
-   原 / Original: return vram_gb < 31
-   改为 / Change:  return vram_gb < 6
-
-2. 清空 API Key / Clear API Key
-   文件路径 / File: C:\Users\<用户名>\AppData\Local\LTXDesktop\settings.json
-   原 / Original: "fal_api_key": "xxxxx"
-   改为 / Change:  "fal_api_key": ""
-
-【说明 / Note】
-- VRAM 阈值改为 6GB，意味着 6GB 及以上显存都会使用本地显卡
-- VRAM threshold set to 6GB means 6GB+ VRAM will use local GPU
-- 清空 fal_api_key 避免系统误判为已配置 API
-- Clear fal_api_key to avoid system thinking API is configured
-- 修改后重启程序即可生效
-- Restart LTX Desktop after changes
-<img width="2129" height="1614" alt="微信图片_20260402170131_481_218" src="https://github.com/user-attachments/assets/dd0f1044-f66f-4785-89ab-e1717a041c8b" />
-<img width="2121" height="1610" alt="微信图片_20260402171010_482_218" src="https://github.com/user-attachments/assets/a40877bc-3682-44e3-9602-05d3bbb5cb89" />
-https://github.com/user-attachments/assets/b7399618-0963-4834-81b2-d737d05a41a0
-https://github.com/user-attachments/assets/e3e13685-d802-4df4-87c9-518b79859fdf
-https://github.com/user-attachments/assets/991a8370-63fd-414e-bf88-843a4469024a
-
-
-
-
+Video tutorial: https://youtu.be/rM_wUogtrOU
