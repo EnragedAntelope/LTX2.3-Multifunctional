@@ -1621,7 +1621,7 @@ def create_app(
                     is_compiled=False,
                 )
                 self._pipelines.state.gpu_slot = GpuSlot(
-                    active_pipeline=pipeline_state, generation=None
+                    active_pipeline=pipeline_state
                 )
                 _ml = getattr(getattr(ltx_pipe, "pipeline", None), "model_ledger", None)
                 _ml_loras = getattr(_ml, "loras", None) if _ml else None

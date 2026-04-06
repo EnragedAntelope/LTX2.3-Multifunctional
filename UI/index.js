@@ -259,7 +259,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ seed_locked: _seedLocked, locked_seed: seed })
             });
-        } catch (e) { addLog('Seed save error: ' + e.message); }
+        } catch (e) { addLog(`❌ ${_t('logSeedSaveError')}: ${e.message}`); }
     }
     window.toggleSeedLock = toggleSeedLock;
 
@@ -280,7 +280,7 @@
                     body: JSON.stringify({ enabled: this.checked })
                 });
                 addLog(this.checked ? _t('upscalerToggle') + ' ON' : _t('upscalerToggle') + ' OFF');
-            } catch (e) { addLog('Upscaler error: ' + e.message); }
+            } catch (e) { addLog(`❌ ${_t('logUpscalerError')}: ${e.message}`); }
         });
     }
 
@@ -307,7 +307,7 @@
                 select.appendChild(opt);
             });
             if (currentVal) select.value = currentVal;
-            addLog(`📂 LM Studio: ${(data.models || []).length} model(s) available`);
+            addLog(`📂 ${_t('logLmModelsFound').replace('{n}', (data.models || []).length)}`);
         } catch (e) {
             addLog(`❌ ${_t('logLmStudioConnectFail')}: ${e.message || e}`);
         }
@@ -522,10 +522,58 @@
     // Scan using custom dirs from inputs
     // (update scanModels and scanLoras to pass custom dir query param inline)
 
+    // ── Persistent UI state helpers ──────────────────────────────────────────
+    // sv(key, val): save to localStorage
+    // gr(id):       get element by id (null-safe)
+    const sv = (key, val) => localStorage.setItem(key, val);
+    const gr = id => document.getElementById(id);
+
+    // Wire a simple <select> or <input[type=text/number]> to auto-save on change
+    function wireSelect(id, key) {
+        const el = gr(id);
+        if (!el) return;
+        const saved = localStorage.getItem(key);
+        if (saved !== null) el.value = saved;
+        el.addEventListener('change', () => sv(key, el.value));
+    }
+
+    // Wire a range slider — also updates the sibling display span
+    function wireRange(id, key, displayId) {
+        const el = gr(id);
+        if (!el) return;
+        const saved = localStorage.getItem(key);
+        if (saved !== null) {
+            el.value = saved;
+            const disp = gr(displayId);
+            if (disp) disp.textContent = saved;
+        }
+        const update = () => { sv(key, el.value); const d = gr(displayId); if (d) d.textContent = el.value; };
+        el.addEventListener('input', update);
+        el.addEventListener('change', update);
+    }
+
+    // Wire a checkbox
+    function wireCheck(id, key, defaultVal) {
+        const el = gr(id);
+        if (!el) return;
+        const saved = localStorage.getItem(key);
+        el.checked = saved !== null ? saved === '1' : defaultVal;
+        el.addEventListener('change', () => sv(key, el.checked ? '1' : '0'));
+    }
+
+    // Wire a textarea — saves on blur
+    function wireTextarea(id, key) {
+        const el = gr(id);
+        if (!el) return;
+        const saved = localStorage.getItem(key);
+        if (saved !== null) el.value = saved;
+        el.addEventListener('blur', () => sv(key, el.value));
+    }
+
     // Page load init: scan models and LoRAs (using backend default directory rules)
     (function() {
         ['vid-quality', 'batch-quality'].forEach((id) => {
-            const sel = document.getElementById(id);
+            const sel = gr(id);
             if (sel && sel.value === '544') sel.value = '540';
         });
 
@@ -538,26 +586,87 @@
             initSeedControl();
             initUpscalerToggle();
 
-            // Restore localStorage values for new controls
-            const savedSteps = localStorage.getItem('inference_steps');
-            if (savedSteps) {
-                const el = document.getElementById('vid-inference-steps');
-                const val = document.getElementById('inference-steps-val');
-                if (el) { el.value = savedSteps; if (val) val.innerText = savedSteps; }
+            // ── Restore & wire ALL persistent UI state ──────────────────────
+
+            // Prompt
+            wireTextarea('prompt', 'ui_prompt');
+
+            // Video tab controls
+            wireSelect('vid-quality', 'ui_vid_quality');
+            wireSelect('vid-ratio', 'ui_vid_ratio');
+            wireSelect('vid-fps', 'ui_vid_fps');
+            wireSelect('vid-duration', 'ui_vid_duration');
+            wireSelect('vid-motion', 'ui_vid_motion');
+            wireCheck('vid-audio', 'ui_vid_audio', false);
+            updateResPreview();
+
+            // Inference steps (range + display span)
+            wireRange('vid-inference-steps', 'inference_steps', 'inference-steps-val');
+            wireRange('batch-inference-steps', 'batch_inference_steps', 'batch-inference-steps-val');
+
+            // Negative prompt
+            wireTextarea('negative-prompt', 'negative_prompt');
+
+            // LoRA (selects populated after scan — defer value restore until after scan)
+            const loraRestoreVid = localStorage.getItem('ui_vid_lora');
+            const loraStrengthVid = localStorage.getItem('ui_vid_lora_strength');
+            const loraRestoreBatch = localStorage.getItem('ui_batch_lora');
+            const loraStrengthBatch = localStorage.getItem('ui_batch_lora_strength');
+            // Wire save on change (value restore happens in updateLoraDropdown after scan)
+            const vidLoraEl = gr('vid-lora');
+            if (vidLoraEl) vidLoraEl.addEventListener('change', () => sv('ui_vid_lora', vidLoraEl.value));
+            const vidLoraStrEl = gr('lora-strength');
+            if (vidLoraStrEl) {
+                if (loraStrengthVid !== null) vidLoraStrEl.value = loraStrengthVid;
+                vidLoraStrEl.addEventListener('change', () => sv('ui_vid_lora_strength', vidLoraStrEl.value));
             }
-            const savedBatchSteps = localStorage.getItem('batch_inference_steps');
-            if (savedBatchSteps) {
-                const el = document.getElementById('batch-inference-steps');
-                const val = document.getElementById('batch-inference-steps-val');
-                if (el) { el.value = savedBatchSteps; if (val) val.innerText = savedBatchSteps; }
+            const batchLoraEl = gr('batch-lora');
+            if (batchLoraEl) batchLoraEl.addEventListener('change', () => sv('ui_batch_lora', batchLoraEl.value));
+            const batchLoraStrEl = gr('batch-lora-strength');
+            if (batchLoraStrEl) {
+                if (loraStrengthBatch !== null) batchLoraStrEl.value = loraStrengthBatch;
+                batchLoraStrEl.addEventListener('change', () => sv('ui_batch_lora_strength', batchLoraStrEl.value));
             }
-            const savedNeg = localStorage.getItem('negative_prompt');
-            if (savedNeg) { const el = document.getElementById('negative-prompt'); if (el) el.value = savedNeg; }
-            // Save negative prompt on change
-            const negEl = document.getElementById('negative-prompt');
-            if (negEl) negEl.addEventListener('blur', () => localStorage.setItem('negative_prompt', negEl.value));
+
+            // Model selects (populated after scan — same deferred restore pattern)
+            const modelRestoreVid = localStorage.getItem('ui_vid_model');
+            const modelRestoreBatch = localStorage.getItem('ui_batch_model');
+            const vidModelEl = gr('vid-model');
+            if (vidModelEl) vidModelEl.addEventListener('change', () => sv('ui_vid_model', vidModelEl.value));
+            const batchModelEl = gr('batch-model');
+            if (batchModelEl) batchModelEl.addEventListener('change', () => sv('ui_batch_model', batchModelEl.value));
+
+            // Image tab
+            wireSelect('img-preset', 'ui_img_preset');
+            const savedImgW = localStorage.getItem('ui_img_w');
+            const savedImgH = localStorage.getItem('ui_img_h');
+            if (savedImgW) { const e = gr('img-w'); if (e) e.value = savedImgW; }
+            if (savedImgH) { const e = gr('img-h'); if (e) e.value = savedImgH; }
+            const imgWEl = gr('img-w'); if (imgWEl) imgWEl.addEventListener('change', () => sv('ui_img_w', imgWEl.value));
+            const imgHEl = gr('img-h'); if (imgHEl) imgHEl.addEventListener('change', () => sv('ui_img_h', imgHEl.value));
+            wireRange('img-steps', 'ui_img_steps', 'img-steps-val');
+
+            // Batch tab
+            wireSelect('batch-quality', 'ui_batch_quality');
+            wireSelect('batch-ratio', 'ui_batch_ratio');
+
+            // After LoRA/model dropdowns are populated, restore saved selections
+            // scanModels/scanLoras call updateLoraDropdown/updateModelDropdown which
+            // repopulate options — we patch in a one-time post-scan restore here
+            const _origScanLoras = window._scanLorasDone;
+            const tryRestoreLoras = () => {
+                if (loraRestoreVid && vidLoraEl) vidLoraEl.value = loraRestoreVid;
+                if (loraRestoreBatch && batchLoraEl) batchLoraEl.value = loraRestoreBatch;
+            };
+            const tryRestoreModels = () => {
+                if (modelRestoreVid && vidModelEl) vidModelEl.value = modelRestoreVid;
+                if (modelRestoreBatch && batchModelEl) batchModelEl.value = modelRestoreBatch;
+            };
+            // Restore after a brief delay to let scan populate options
+            setTimeout(() => { tryRestoreLoras(); tryRestoreModels(); }, 500);
+
             // Save seed value on change
-            const seedValEl = document.getElementById('seed-value');
+            const seedValEl = gr('seed-value');
             if (seedValEl) seedValEl.addEventListener('change', async function () {
                 if (!_seedLocked) return;
                 const seed = parseInt(this.value) || 42;
@@ -571,11 +680,11 @@
             });
 
             // Wire save & scan button
-            const saveScanBtn = document.getElementById('save-scan-dirs-btn');
+            const saveScanBtn = gr('save-scan-dirs-btn');
             if (saveScanBtn) saveScanBtn.addEventListener('click', saveAndScanDirs);
 
             // Auto-save + auto-scan when dir inputs change
-            const loraDirEl = document.getElementById('custom-lora-dir');
+            const loraDirEl = gr('custom-lora-dir');
             if (loraDirEl) {
                 loraDirEl.addEventListener('blur', async () => {
                     const loraDir = loraDirEl.value.trim();
@@ -590,11 +699,11 @@
                 });
             }
 
-            const modelsDirEl = document.getElementById('custom-models-dir');
+            const modelsDirEl = gr('custom-models-dir');
             if (modelsDirEl) {
                 modelsDirEl.addEventListener('blur', async () => {
                     const modelsDir = modelsDirEl.value.trim();
-                    const useLocalEncoder = !!(document.getElementById('local-text-encoder-toggle') || {}).checked;
+                    const useLocalEncoder = !!(gr('local-text-encoder-toggle') || {}).checked;
                     try {
                         await fetch(`${BASE}/api/models-dir`, {
                             method: 'POST',

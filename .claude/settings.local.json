@@ -16,7 +16,11 @@
       "Read(//c/Users/Default.LivingRoomPC/AppData/Local/Programs/LTX Desktop/resources/backend/**)",
       "Read(//tmp/**)",
       "Bash(gh repo:*)",
-      "WebFetch(domain:api.github.com)"
+      "WebFetch(domain:api.github.com)",
+      "Bash(grep -v \"^.*//.*addLog\")",
+      "Bash(grep -Pv \"^[0-9]+:\\\\s*//\")",
+      "Bash(sort -t: -k2 -n)",
+      "Bash(sort -t\"'\" -k2)"
     ]
   }
 }

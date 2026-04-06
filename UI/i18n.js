@@ -259,6 +259,9 @@
             lmResetSystemPrompt: '恢复默认',
             lmApiNote: '注意：使用 LTX API 模式时，服务端自动处理提示词增强，LM Studio 将被跳过。',
             logLmStudioConnectFail: '无法连接 LM Studio',
+            logLmModelsFound: '已从 LM Studio 获取到 {n} 个模型',
+            logSeedSaveError: '种子保存失败',
+            logUpscalerError: '超分设置保存失败',
             enhancedPromptLabel: '增强后的提示词（将用于渲染）',
             clearEnhanced: '丢弃',
             // --- Directory management ---
@@ -523,6 +526,9 @@
             lmResetSystemPrompt: 'Reset to default',
             lmApiNote: 'Note: In LTX API mode, prompt enhancement is handled server-side; LM Studio is skipped.',
             logLmStudioConnectFail: 'Cannot connect to LM Studio',
+            logLmModelsFound: 'Fetched {n} model(s) from LM Studio',
+            logSeedSaveError: 'Failed to save seed',
+            logUpscalerError: 'Failed to save upscaler setting',
             enhancedPromptLabel: 'Enhanced Prompt (in use)',
             clearEnhanced: 'Discard',
             // --- Directory management ---
