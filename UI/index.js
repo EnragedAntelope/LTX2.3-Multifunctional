@@ -171,9 +171,10 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt, base_url, model, context_length, temperature, unload_after, strip_thinking, system_prompt })
         });
-        const data = await res.json();
+        let data;
+        try { data = await res.json(); } catch (_) { throw new Error(`HTTP ${res.status} — server returned non-JSON response`); }
         if (data.status === 'ok' && data.enhanced_prompt) return data.enhanced_prompt;
-        throw new Error(data.error || 'unknown error');
+        throw new Error(data.error || (res.ok ? 'LLM returned empty response' : `HTTP ${res.status}`));
     }
 
     function _showEnhancedPrompt(text) {

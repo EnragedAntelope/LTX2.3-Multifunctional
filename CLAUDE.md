@@ -124,6 +124,28 @@ The backend supports two encoding modes controlled by `use_local_text_encoder` i
 
 The `should_use_local_encoding()` method on `TextHandler` decides which path to take.
 
+## LTX Desktop Version Compatibility
+
+**At the start of every session working on this repo**, check the installed LTX Desktop version:
+
+```
+%LOCALAPPDATA%\Programs\LTX Desktop\resources\app\package.json   # "version" field
+```
+
+Then verify our patches are still compatible:
+- Confirm all official routers we import in `app_factory.py` still exist under `_routes/`
+- Confirm `GenerateVideoRequest` fields in `api_types.py` haven't changed
+- Check `video_generation_handler.py` for handler class renames or signature changes
+- Confirm `ltx_text_encoder.py` and pipeline module paths haven't moved
+
+If the version has bumped, audit the diff before making any other changes.
+
+### Known Version-Specific Workarounds
+
+| LTX Desktop version | Workaround | Location | Recheck when |
+|---|---|---|---|
+| ≤ 1.0.4 (current) | `ltx_pipelines.retake_pipeline` doesn't exist — `ltx_text_encoder._install_cleanup_memory_patch` logs a warning trying to import it. We inject a no-op stub into `sys.modules` to suppress the warning. | `patches/app_factory.py` top of file | Next LTX Desktop release — if the module ships, remove the stub. |
+
 ## Coding Conventions
 
 - **All user-facing strings must be bilingual** — use i18n keys, never hardcode Chinese or English alone

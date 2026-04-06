@@ -5,10 +5,32 @@ from __future__ import annotations
 import base64
 import hmac
 import os
+import sys
+import types
 
-# 防 OOM 与显存碎片化 / Prevent OOM & VRAM fragmentation: inject env var before torch init
-os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+# expandable_segments is Linux-only; setting it on Windows triggers a harmless but noisy warning.
+# Only apply on non-Windows platforms. / 仅在非 Windows 平台启用，避免无效警告
+if sys.platform != "win32":
+    os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+
 import torch  # 提升到顶层导入 / Hoist to top-level import
+
+# ltx_text_encoder tries to patch cleanup_memory in ltx_pipelines.retake_pipeline, but
+# that submodule doesn't exist in this version of LTX Desktop. Inject a no-op stub so the
+# import succeeds silently instead of logging a warning.
+# / ltx_text_encoder 尝试 patch retake_pipeline.cleanup_memory，但该模块在此版本中不存在。
+# 注入空 stub 使导入静默成功。
+try:
+    import ltx_pipelines as _lp_pkg  # noqa: F401
+    if "ltx_pipelines.retake_pipeline" not in sys.modules:
+        _rp_stub = types.ModuleType("ltx_pipelines.retake_pipeline")
+        _rp_stub.cleanup_memory = lambda *a, **kw: None  # type: ignore[attr-defined]
+        sys.modules["ltx_pipelines.retake_pipeline"] = _rp_stub
+        if not hasattr(_lp_pkg, "retake_pipeline"):
+            setattr(_lp_pkg, "retake_pipeline", _rp_stub)
+except ImportError:
+    pass  # ltx_pipelines not yet importable at this point; stub will be injected lazily
+
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 from pathlib import Path  # Required for Windows path handling
@@ -916,6 +938,12 @@ def create_app(
                     r'<reason>.*?</reason>',
                 ]:
                     enhanced = _re.sub(pattern, '', enhanced, flags=_re.DOTALL).strip()
+
+            if not enhanced:
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": "LLM returned an empty response after stripping thinking blocks. Try disabling 'Strip thinking/reasoning blocks' or use a different model."},
+                )
 
             # Unload the model after inference using LM Studio's native REST API
             if unload_after:
