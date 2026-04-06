@@ -1156,14 +1156,14 @@ def create_app(
         is_running = (
             gen.is_generation_running()
             if hasattr(gen, "is_generation_running")
-            else "?方法不存在"
+            else "?method N/A"
         )
-        gen_id = getattr(gen, "_generation_id", "?属性不存在")
-        is_gen = getattr(gen, "_is_generating", "?属性不存在")
+        gen_id = getattr(gen, "_generation_id", "?attr N/A")
+        is_gen = getattr(gen, "_is_generating", "?attr N/A")
         cancelled = getattr(
-            gen, "_cancelled", getattr(gen, "_is_cancelled", "?属性不存在")
+            gen, "_cancelled", getattr(gen, "_is_cancelled", "?attr N/A")
         )
-        print(f"\n[PATCH][patched_generate] ==> 收到新请求")
+        print(f"\n[PATCH][patched_generate] ==> New request received / 收到新请求")
         print(f"  is_generation_running() = {is_running}")
         print(f"  _generation_id          = {gen_id}")
         print(f"  _is_generating          = {is_gen}")
@@ -1206,8 +1206,8 @@ def create_app(
         image_path = normalize_optional_path(getattr(req, "imagePath", None))
         print(f"[PATCH] image_path = {image_path}")
 
-        # 始终使用自定义逻辑（支持首尾帧和竖屏）
-        print(f"[PATCH] 使用自定义逻辑处理")
+        # 始终使用自定义逻辑（支持首尾帧和竖屏）/ Always use custom logic (supports start/end frames and portrait)
+        print(f"[PATCH] Using custom logic / 使用自定义逻辑处理")
 
         # 计算分辨率
         import uuid
@@ -1239,7 +1239,7 @@ def create_app(
         num_frames = ((duration * fps) // 8) * 8 + 1
         num_frames = max(num_frames, 9)
 
-        print(f"[PATCH] 计算得到的分辨率: {width}x{height}, 帧数: {num_frames}")
+        print(f"[PATCH] Computed resolution: {width}x{height}, frames: {num_frames}")
 
         # 多关键帧单次推理时勿用首尾帧属性，避免与 keyframe 列表重复
         if use_multi_keyframes:
@@ -1309,11 +1309,11 @@ def create_app(
         is_running = (
             gen.is_generation_running()
             if hasattr(gen, "is_generation_running")
-            else "?方法不存在"
+            else "?method N/A"
         )
-        gen_id = getattr(gen, "_generation_id", "?属性不存在")
-        is_gen = getattr(gen, "_is_generating", "?属性不存在")
-        print(f"[PATCH][patched_generate_video] ==> 开始推理")
+        gen_id = getattr(gen, "_generation_id", "?attr N/A")
+        is_gen = getattr(gen, "_is_generating", "?attr N/A")
+        print(f"[PATCH][patched_generate_video] ==> Starting inference / 开始推理")
         print(f"  is_generation_running() = {is_running}")
         print(f"  _generation_id          = {gen_id}")
         print(f"  _is_generating          = {is_gen}")
@@ -1349,7 +1349,7 @@ def create_app(
             st_override = keyframe_strengths or []
             if len(st_override) not in (0, n_kf):
                 print(
-                    f"[PATCH] keyframeStrengths 长度({len(st_override)})与关键帧数({n_kf})不一致，改用默认强度曲线"
+                    f"[PATCH] keyframeStrengths length ({len(st_override)}) doesn't match keyframe count ({n_kf}), using default strength curve / 改用默认强度曲线"
                 )
                 st_override = []
 
@@ -1544,12 +1544,12 @@ def create_app(
                             )
                         ]
                         print(
-                            f"[PATCH] LoRA 已就绪: {lora_str}, strength={lora_strength}"
+                            f"[PATCH] LoRA ready / 已就绪: {lora_str}, strength={lora_strength}"
                         )
                     else:
-                        print(f"[PATCH] LoRA 文件不存在，将使用无 LoRA Fast: {lora_str}")
+                        print(f"[PATCH] LoRA file not found, using no-LoRA fast pipeline / 文件不存在: {lora_str}")
                 except Exception as _lora_err:
-                    print(f"[PATCH] LoRA 准备失败，回退无 LoRA: {_lora_err}")
+                    print(f"[PATCH] LoRA load failed, falling back to no-LoRA / 准备失败: {_lora_err}")
                     loras = None
 
             if loras is not None:
@@ -1561,12 +1561,12 @@ def create_app(
             desired_sig = ("fast", lora_key, lora_st)
 
             if loras is not None:
-                print("[PATCH] 构建带 LoRA 的 Fast pipeline（unload 后重建）")
+                print("[PATCH] Building Fast pipeline with LoRA (rebuilt after unload) / 构建带 LoRA 的 Fast pipeline")
                 # 首次 LoRA 构建时可能触发额外的显存峰值（编译/缓存/权重搬运）。
                 # 通过一次无 LoRA 的 fast pipeline warmup 来降低后续 LoRA 构建的峰值风险。
                 if not getattr(self, "_ltx_lora_warmup_done", False):
                     try:
-                        print("[PATCH] LoRA warmup: 先加载无 LoRA fast pipeline 触发缓存")
+                        print("[PATCH] LoRA warmup: loading no-LoRA fast pipeline to prime cache / 先加载无 LoRA fast pipeline 触发缓存")
                         # should_warm=True：尽量触发内核/权重缓存（若实现不同则静默失败也可回退）
                         self._pipelines.load_gpu_pipeline("fast", should_warm=True)
                         from keep_models_runtime import force_unload_gpu_pipeline
@@ -1654,15 +1654,15 @@ def create_app(
                 _ml = getattr(getattr(ltx_pipe, "pipeline", None), "model_ledger", None)
                 _ml_loras = getattr(_ml, "loras", None) if _ml else None
                 print(
-                    f"[PATCH] LoRA: __init__ 额外参数={list(lora_kw.keys())}, "
-                    f"深度注入点数={n_inj}, model_ledger.loras={_ml_loras}"
+                    f"[PATCH] LoRA init: extra_kw={list(lora_kw.keys())}, "
+                    f"injection_points={n_inj}, model_ledger.loras={_ml_loras}"
                 )
                 if getattr(self._pipelines, "low_vram_mode", False):
                     from low_vram_runtime import try_sequential_offload_on_pipeline_state
 
                     try_sequential_offload_on_pipeline_state(pipeline_state)
             else:
-                print(f"[PATCH] 加载 Fast pipeline（无 LoRA）")
+                print(f"[PATCH] Loading Fast pipeline (no LoRA) / 加载 Fast pipeline（无 LoRA）")
                 pipeline_state = self._pipelines.load_gpu_pipeline(
                     "fast", should_warm=False
                 )

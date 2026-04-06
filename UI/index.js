@@ -1664,6 +1664,14 @@
             
             const activeGpu = (sysGpus.gpus || []).find(x => x.active) || (sysGpus.gpus || [])[0] || {};
             const gpuName = activeGpu.name || g.gpu_info?.name || "GPU";
+
+            // Populate gpu-selector if it hasn't been filled yet (e.g. listGpus() raced against startup)
+            const selector = document.getElementById('gpu-selector');
+            if (selector && selector.options.length === 1 && selector.options[0].value === '' && (sysGpus.gpus || []).length > 0) {
+                selector.innerHTML = sysGpus.gpus.map(gpu =>
+                    `<option value="${gpu.id}" ${gpu.active ? 'selected' : ''}>GPU ${gpu.id}: ${gpu.name} (${gpu.vram})</option>`
+                ).join('');
+            }
             
             const s = document.getElementById('sys-status');
             const indicator = document.getElementById('sys-indicator');

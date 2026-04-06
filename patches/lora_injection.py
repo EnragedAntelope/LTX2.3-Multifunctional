@@ -1,4 +1,5 @@
-"""将用户 LoRA 注入 Fast 视频管线：兼容 ModelLedger 与 LTX-2 DiffusionStage/Builder。"""
+"""Inject user LoRAs into the Fast video pipeline; compatible with ModelLedger and LTX-2 DiffusionStage/Builder.
+将用户 LoRA 注入 Fast 视频管线：兼容 ModelLedger 与 LTX-2 DiffusionStage/Builder。"""
 
 from __future__ import annotations
 
@@ -27,7 +28,9 @@ def _lora_init_kwargs(
 
 
 def inject_loras_into_fast_pipeline(ltx_pipe: Any, loras: list[Any] | tuple[Any, ...]) -> int:
-    """在已构造的管线上尽量把 LoRA 写进会参与 build 的 Builder / ledger。返回成功写入的处数。"""
+    """Write LoRAs into every Builder/ledger that participates in the build on an already-constructed pipeline.
+    Returns the number of successfully patched injection points.
+    在已构造的管线上尽量把 LoRA 写进会参与 build 的 Builder / ledger。返回成功写入的处数。"""
     if not loras:
         return 0
     tup = tuple(loras)
@@ -49,7 +52,7 @@ def inject_loras_into_fast_pipeline(ltx_pipe: Any, loras: list[Any] | tuple[Any,
             try:
                 ml.loras = tup
                 patched += 1
-                logger.info("LoRA: 已设置 model_ledger.loras")
+                logger.info("LoRA: set model_ledger.loras / 已设置 model_ledger.loras")
             except Exception as e:
                 logger.debug("model_ledger.loras: %s", e)
 
@@ -85,7 +88,7 @@ def inject_loras_into_fast_pipeline(ltx_pipe: Any, loras: list[Any] | tuple[Any,
                         new_tb = tb.with_loras(tup)
                         setattr(holder, attr, new_tb)
                         patched += 1
-                        logger.info("LoRA: 已更新 %s.with_loras", attr)
+                        logger.info("LoRA: updated %s.with_loras / 已更新", attr)
                     except Exception as e:
                         logger.debug("with_loras %s: %s", attr, e)
 
@@ -104,7 +107,7 @@ def inject_loras_into_fast_pipeline(ltx_pipe: Any, loras: list[Any] | tuple[Any,
                 try:
                     obj._transformer_builder = tb.with_loras(tup)
                     patched += 1
-                    logger.info("LoRA: 已写入 DiffusionStage._transformer_builder")
+                    logger.info("LoRA: wrote to DiffusionStage._transformer_builder / 已写入")
                 except Exception as e:
                     logger.debug("DiffusionStage: %s", e)
 
