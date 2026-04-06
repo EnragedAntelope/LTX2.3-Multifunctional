@@ -386,7 +386,8 @@
             if (el) { el.value = savedTemp; if (valEl) valEl.textContent = savedTemp; }
         }
         const savedUnload = localStorage.getItem('lm_studio_unload');
-        if (savedUnload !== null) { const el = document.getElementById('lm-studio-unload'); if (el) el.checked = savedUnload === '1'; }
+        // Default is checked (true); only override if user explicitly saved '0'
+        if (savedUnload === '0') { const el = document.getElementById('lm-studio-unload'); if (el) el.checked = false; }
         const savedStrip = localStorage.getItem('lm_studio_strip_think');
         if (savedStrip !== null) { const el = document.getElementById('lm-studio-strip-think'); if (el) el.checked = savedStrip !== '0'; }
 
