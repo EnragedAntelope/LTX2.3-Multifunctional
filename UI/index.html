@@ -84,12 +84,18 @@
                         <input type="checkbox" id="lm-studio-unload" checked>
                         <label for="lm-studio-unload" style="font-size: 11px;" data-i18n="lmUnloadAfter">Unload model after inference</label>
                     </div>
-                    <div class="checkbox-container" style="margin-bottom: 6px;">
+                    <div class="checkbox-container" style="margin-bottom: 10px;">
                         <input type="checkbox" id="lm-studio-strip-think" checked>
                         <label for="lm-studio-strip-think" style="font-size: 11px;" data-i18n="lmStripThinking">Strip thinking/reasoning blocks</label>
                     </div>
 
-                    <div style="font-size: 10px; color: var(--text-dim); margin-top: 6px; line-height: 1.4;" data-i18n="lmApiNote">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <label style="font-size: 11px;" data-i18n="lmSystemPromptLabel">System prompt</label>
+                        <button type="button" id="lm-reset-system-prompt" class="btn-outline" style="font-size: 10px; padding: 2px 8px;" data-i18n="lmResetSystemPrompt">Reset to default</button>
+                    </div>
+                    <textarea id="lm-system-prompt" style="height: 100px; font-size: 10px; line-height: 1.5; margin-bottom: 8px; resize: vertical;" data-i18n-placeholder="lmSystemPromptPh" placeholder="System prompt for the LLM..."></textarea>
+
+                    <div style="font-size: 10px; color: var(--text-dim); margin-top: 2px; line-height: 1.4;" data-i18n="lmApiNote">
                         Note: In LTX API mode, prompt enhancement is handled server-side; LM Studio is skipped.
                     </div>
                 </div>

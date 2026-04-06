@@ -143,6 +143,19 @@
     // Prompt enhancer via LM Studio
     let _enhancedPromptText = '';
 
+    const LM_DEFAULT_SYSTEM_PROMPT =
+        "You are a cinematic video prompt engineer for LTX Video 2.3, a latent diffusion model " +
+        "that generates short video clips from text or image input.\n\n" +
+        "Your task: take the user's brief description and expand it into a single, detailed prompt " +
+        "optimised for LTX Video 2.3. Follow these rules:\n" +
+        "- Begin with the main subject and action\n" +
+        "- Describe camera angle and motion (e.g. low-angle tracking shot, slow push-in, handheld)\n" +
+        "- Specify lighting (quality, direction, colour temperature)\n" +
+        "- Include scene atmosphere, colour palette, and visual style\n" +
+        "- End with texture/material details and temporal dynamics (how things move or change)\n" +
+        "- Keep the result under 150 words\n" +
+        "- Output ONLY the enhanced prompt — no explanations, no labels, no markdown";
+
     // Low-level API call — returns enhanced text, throws on failure
     async function _callEnhanceApi(prompt) {
         const base_url = ((document.getElementById('lm-studio-url') || {}).value || 'http://localhost:1234').trim();
@@ -151,11 +164,12 @@
         const temperature = parseFloat((document.getElementById('lm-studio-temp') || {}).value) || 0.7;
         const unload_after = !!(document.getElementById('lm-studio-unload') || {}).checked;
         const strip_thinking = document.getElementById('lm-studio-strip-think') ? document.getElementById('lm-studio-strip-think').checked : true;
+        const system_prompt = (document.getElementById('lm-system-prompt') || {}).value?.trim() || LM_DEFAULT_SYSTEM_PROMPT;
 
         const res = await fetch(`${BASE}/api/system/enhance-prompt`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, base_url, model, context_length, temperature, unload_after, strip_thinking })
+            body: JSON.stringify({ prompt, base_url, model, context_length, temperature, unload_after, strip_thinking, system_prompt })
         });
         const data = await res.json();
         if (data.status === 'ok' && data.enhanced_prompt) return data.enhanced_prompt;
@@ -387,6 +401,21 @@
         // Wire refresh button
         const refreshBtn = document.getElementById('lm-studio-refresh-models');
         if (refreshBtn) refreshBtn.addEventListener('click', fetchLmStudioModels);
+
+        // System prompt — restore saved or show default
+        const sysPEl = document.getElementById('lm-system-prompt');
+        if (sysPEl) {
+            const savedSysP = localStorage.getItem('lm_system_prompt');
+            sysPEl.value = savedSysP !== null ? savedSysP : LM_DEFAULT_SYSTEM_PROMPT;
+            sysPEl.addEventListener('blur', () => localStorage.setItem('lm_system_prompt', sysPEl.value));
+        }
+        const resetSysPBtn = document.getElementById('lm-reset-system-prompt');
+        if (resetSysPBtn) {
+            resetSysPBtn.addEventListener('click', () => {
+                if (sysPEl) sysPEl.value = LM_DEFAULT_SYSTEM_PROMPT;
+                localStorage.setItem('lm_system_prompt', LM_DEFAULT_SYSTEM_PROMPT);
+            });
+        }
 
         applyToggle();
     }

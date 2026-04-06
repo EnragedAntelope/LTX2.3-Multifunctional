@@ -860,20 +860,27 @@ def create_app(
             temperature = float(body.get("temperature", 0.7))
             unload_after = bool(body.get("unload_after", False))
             strip_thinking = bool(body.get("strip_thinking", True))
+            system_prompt = body.get("system_prompt", "").strip()
 
             if not prompt:
                 return JSONResponse(status_code=400, content={"error": "No prompt provided"})
 
             chat_url = f"{base_url}/v1/chat/completions"
 
-            system_prompt = (
-                "You are a cinematic video prompt enhancer for LTX 2.3 AI video generation. "
-                "Take the user's simple description and expand it into a detailed, vivid prompt. "
-                "Include specifics about: lighting quality and direction, camera angle and movement, "
-                "scene atmosphere, visual style, color palette, and temporal dynamics. "
-                "The prompt should guide a video diffusion model to produce cinematic output. "
-                "Keep under 200 words. Output ONLY the enhanced prompt text, no explanations or metadata."
-            )
+            if not system_prompt:
+                system_prompt = (
+                    "You are a cinematic video prompt engineer for LTX Video 2.3, a latent diffusion model "
+                    "that generates short video clips from text or image input.\n\n"
+                    "Your task: take the user's brief description and expand it into a single, detailed prompt "
+                    "optimised for LTX Video 2.3. Follow these rules:\n"
+                    "- Begin with the main subject and action\n"
+                    "- Describe camera angle and motion (e.g. low-angle tracking shot, slow push-in, handheld)\n"
+                    "- Specify lighting (quality, direction, colour temperature)\n"
+                    "- Include scene atmosphere, colour palette, and visual style\n"
+                    "- End with texture/material details and temporal dynamics (how things move or change)\n"
+                    "- Keep the result under 150 words\n"
+                    "- Output ONLY the enhanced prompt — no explanations, no labels, no markdown"
+                )
 
             req_body = {
                 "messages": [
