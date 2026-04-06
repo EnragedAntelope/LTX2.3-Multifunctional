@@ -145,17 +145,18 @@
         
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
             <label style="margin-bottom: 0;" data-i18n="promptLabel">Prompt</label>
-            <button type="button" id="enhance-prompt-btn" onclick="handleEnhanceClick()" class="btn-enhance disabled" title="Enhance prompt with AI" data-i18n-title="enhancePromptTooltip">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/></svg>
-                <span data-i18n="enhancePrompt">Enhance</span>
-            </button>
+            <div id="enhance-checkbox-wrap" style="display: none; align-items: center; gap: 5px;">
+                <input type="checkbox" id="enhance-on-generate" style="margin: 0;">
+                <label for="enhance-on-generate" style="font-size: 10px; color: var(--text-dim); margin-bottom: 0; cursor: pointer; user-select: none;" data-i18n="enhanceOnGenerate">Enhance on render</label>
+            </div>
         </div>
         <textarea id="prompt" data-i18n-placeholder="promptPlaceholder" placeholder="Describe the scene..." style="height: 90px; margin-bottom: 0;"></textarea>
         <div id="enhanced-prompt-display" style="display: none; margin-top: 6px; margin-bottom: 8px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                 <label style="font-size: 11px; color: var(--accent); font-weight: bold;" data-i18n="enhancedPromptLabel">Enhanced Prompt</label>
-                <button type="button" id="clear-enhanced-btn" onclick="clearEnhancedPrompt()" class="btn-outline" style="font-size: 10px; padding: 2px 8px;" data-i18n="clearEnhanced">Clear</button>
+                <button type="button" onclick="clearEnhancedPrompt()" class="btn-outline" style="font-size: 10px; padding: 2px 8px;" data-i18n="clearEnhanced">Discard</button>
             </div>
+            <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 4px;" data-i18n="enhancedPromptHint">Original prompt preserved above — this version will be sent on next render.</div>
             <div id="enhanced-prompt-text" style="font-size: 11px; padding: 8px; background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.2); border-radius: 8px; color: var(--text); line-height: 1.5; max-height: 120px; overflow-y: auto; white-space: pre-wrap;"></div>
         </div>
         <!-- Negative Prompt (collapsible) -->

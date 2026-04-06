@@ -143,53 +143,34 @@
     // Prompt enhancer via LM Studio
     let _enhancedPromptText = '';
 
-    async function enhancePrompt() {
-        const promptEl = document.getElementById('prompt');
-        const btn = document.getElementById('enhance-prompt-btn');
-        const prompt = promptEl ? promptEl.value.trim() : '';
-        if (!prompt || !btn) return;
+    // Low-level API call — returns enhanced text, throws on failure
+    async function _callEnhanceApi(prompt) {
+        const base_url = ((document.getElementById('lm-studio-url') || {}).value || 'http://localhost:1234').trim();
+        const model = (document.getElementById('lm-studio-model') || {}).value || '';
+        const context_length = parseInt((document.getElementById('lm-studio-ctx') || {}).value) || 4096;
+        const temperature = parseFloat((document.getElementById('lm-studio-temp') || {}).value) || 0.7;
+        const unload_after = !!(document.getElementById('lm-studio-unload') || {}).checked;
+        const strip_thinking = document.getElementById('lm-studio-strip-think') ? document.getElementById('lm-studio-strip-think').checked : true;
 
-        const spanEl = btn.querySelector('span');
-        const origText = spanEl ? spanEl.textContent : btn.textContent;
-        if (spanEl) spanEl.textContent = _t('enhancing');
-        else btn.textContent = _t('enhancing');
-        btn.classList.add('enhancing');
+        const res = await fetch(`${BASE}/api/system/enhance-prompt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, base_url, model, context_length, temperature, unload_after, strip_thinking })
+        });
+        const data = await res.json();
+        if (data.status === 'ok' && data.enhanced_prompt) return data.enhanced_prompt;
+        throw new Error(data.error || 'unknown error');
+    }
 
-        try {
-            const base_url = ((document.getElementById('lm-studio-url') || {}).value || 'http://localhost:1234').trim();
-            const model = (document.getElementById('lm-studio-model') || {}).value || '';
-            const context_length = parseInt((document.getElementById('lm-studio-ctx') || {}).value) || 4096;
-            const temperature = parseFloat((document.getElementById('lm-studio-temp') || {}).value) || 0.7;
-            const unload_after = !!(document.getElementById('lm-studio-unload') || {}).checked;
-            const strip_thinking = document.getElementById('lm-studio-strip-think') ? document.getElementById('lm-studio-strip-think').checked : true;
-
-            const res = await fetch(`${BASE}/api/system/enhance-prompt`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, base_url, model, context_length, temperature, unload_after, strip_thinking })
-            });
-            const data = await res.json();
-            if (data.status === 'ok' && data.enhanced_prompt) {
-                _enhancedPromptText = data.enhanced_prompt;
-                const displayEl = document.getElementById('enhanced-prompt-display');
-                const textEl = document.getElementById('enhanced-prompt-text');
-                if (displayEl && textEl) {
-                    textEl.textContent = _enhancedPromptText;
-                    displayEl.style.display = 'block';
-                }
-                addLog('✅ Prompt enhanced successfully');
-            } else {
-                addLog('❌ Prompt enhancement failed: ' + (data.error || 'unknown error'));
-            }
-        } catch (e) {
-            addLog('❌ ' + _t('logLmStudioConnectFail') + ': ' + (e.message || e));
-        } finally {
-            if (spanEl) spanEl.textContent = origText;
-            else btn.textContent = origText;
-            btn.classList.remove('enhancing');
+    function _showEnhancedPrompt(text) {
+        _enhancedPromptText = text;
+        const displayEl = document.getElementById('enhanced-prompt-display');
+        const textEl = document.getElementById('enhanced-prompt-text');
+        if (displayEl && textEl) {
+            textEl.textContent = text;
+            displayEl.style.display = 'block';
         }
     }
-    window.enhancePrompt = enhancePrompt;
 
     function clearEnhancedPrompt() {
         _enhancedPromptText = '';
@@ -203,29 +184,6 @@
         const promptEl = document.getElementById('prompt');
         return promptEl ? promptEl.value.trim() : '';
     }
-
-    // Handle enhance button click - opens settings if LM Studio not configured
-    function handleEnhanceClick() {
-        const toggle = document.getElementById('lm-studio-enabled');
-        if (toggle && toggle.checked) {
-            enhancePrompt();
-        } else {
-            // Open settings panel and highlight LM Studio section
-            const settingsPanel = document.getElementById('sys-settings');
-            if (settingsPanel) settingsPanel.style.display = 'block';
-            const lmSection = document.getElementById('lm-studio-enabled');
-            if (lmSection) {
-                const container = lmSection.closest('div[style*="margin-top: 12px"]');
-                if (container) {
-                    container.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    container.classList.add('lm-studio-highlight');
-                    setTimeout(() => container.classList.remove('lm-studio-highlight'), 2500);
-                }
-            }
-            addLog(_t('lmStudioNotConfigured'));
-        }
-    }
-    window.handleEnhanceClick = handleEnhanceClick;
 
     // Negative prompt toggle
     function toggleNegativePrompt() {
@@ -345,13 +303,14 @@
     function initLmStudioToggle() {
         const toggle = document.getElementById('lm-studio-enabled');
         const settingsDiv = document.getElementById('lm-studio-settings');
-        const enhanceBtn = document.getElementById('enhance-prompt-btn');
         if (!toggle) return;
+
+        const enhanceWrap = document.getElementById('enhance-checkbox-wrap');
 
         function applyToggle() {
             const enabled = toggle.checked;
             if (settingsDiv) settingsDiv.style.display = enabled ? 'block' : 'none';
-            if (enhanceBtn) enhanceBtn.classList.toggle('disabled', !enabled);
+            if (enhanceWrap) enhanceWrap.style.display = enabled ? 'flex' : 'none';
             localStorage.setItem('lm_studio_enabled', enabled ? '1' : '0');
             // Auto-fetch model list when section is opened
             if (enabled) fetchLmStudioModels();
@@ -390,6 +349,14 @@
         if (savedUnload === '0') { const el = document.getElementById('lm-studio-unload'); if (el) el.checked = false; }
         const savedStrip = localStorage.getItem('lm_studio_strip_think');
         if (savedStrip !== null) { const el = document.getElementById('lm-studio-strip-think'); if (el) el.checked = savedStrip !== '0'; }
+
+        // Restore enhance-on-generate checkbox
+        const enhanceOnGenEl = document.getElementById('enhance-on-generate');
+        if (enhanceOnGenEl) {
+            const saved = localStorage.getItem('lm_enhance_on_generate');
+            enhanceOnGenEl.checked = saved === null ? true : saved === '1';
+            enhanceOnGenEl.addEventListener('change', () => localStorage.setItem('lm_enhance_on_generate', enhanceOnGenEl.checked ? '1' : '0'));
+        }
 
         // Save LM Studio settings on change
         ['lm-studio-ctx', 'lm-studio-temp', 'lm-studio-unload', 'lm-studio-strip-think'].forEach(id => {
@@ -1671,7 +1638,23 @@
         const btn = document.getElementById('mainBtn');
         const promptEl = document.getElementById('prompt');
         const prompt = promptEl ? promptEl.value.trim() : '';
-        // Use enhanced prompt for generation if available
+
+        // Auto-enhance prompt via LM Studio if checkbox is checked
+        const lmEnabled = !!(document.getElementById('lm-studio-enabled') || {}).checked;
+        const enhanceChecked = !!(document.getElementById('enhance-on-generate') || {}).checked;
+        if (lmEnabled && enhanceChecked && prompt) {
+            addLog('✨ ' + _t('logEnhancingPrompt'));
+            try {
+                const enhanced = await _callEnhanceApi(prompt);
+                _showEnhancedPrompt(enhanced);
+                addLog('✅ ' + _t('logPromptEnhanced'));
+            } catch (e) {
+                addLog('⚠️ ' + _t('logEnhanceFailed') + ': ' + (e.message || e));
+                // Continue with original prompt — don't abort render
+            }
+        }
+
+        // Use enhanced prompt if available, else original
         const effectivePrompt = getEffectivePrompt() || prompt;
 
         function batchHasUsablePrompt() {
