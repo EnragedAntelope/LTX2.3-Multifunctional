@@ -90,6 +90,7 @@ These are the official backend routers imported by our patched `app_factory.py`:
 | `/api/models` | GET | Scan model checkpoints (overrides official router) |
 | `/api/system/seed-settings` | GET/POST | Read/write seed lock state and locked seed value |
 | `/api/system/upscaler` | GET/POST | Toggle built-in upscaler on/off |
+| `/api/vram-limit` | GET/POST | Read/write user-configured VRAM cap (GB) stored in settings.json |
 
 ### Backend Model Types (from `api_types.py`)
 
@@ -167,6 +168,14 @@ Implemented the following features in the UI:
 - **Seed control** — Lock/unlock with backend persistence via `/api/system/seed-settings`
 - **Upscaler toggle** — Checkbox in settings with backend persistence via `/api/system/upscaler`
 - **LM Studio prompt enhancement discoverability** — Always-visible "Enhance" button, guides to settings when unconfigured
+
+### VRAM limit selector (done 2026-04-07)
+Integrated the VRAM cap feature from upstream (hero8152). Changes:
+- **`patches/low_vram_runtime.py`** — Added `get_vram_limit()` (reads `vram_limit` from settings.json) and a layer-streaming patch that injects `streaming_prefetch_count` into every pipeline `__call__`. Formula: count=1 at ≤10 GB, None (unlimited) at ≥25 GB, linearly interpolated at ~0.67 GB/count in between.
+- **`patches/app_factory.py`** — Added `GET /api/vram-limit` and `POST /api/vram-limit` endpoints that persist the value to `%LOCALAPPDATA%\LTXDesktop\settings.json`.
+- **`UI/index.html`** — Added VRAM cap number input + Save button below the upscaler toggle in the settings panel.
+- **`UI/index.js`** — Added `saveVramLimit()` (global) and `initVramLimit()` (loads persisted value on startup).
+- **`UI/i18n.js`** — Added `vramLimitLabel`, `vramLimitPh`, `vramLimitSaved`, `vramLimitUnlimited`, `logVramLimitSaved`, `logError` in both zh and en.
 
 ### Gap audit & fixes (done 2026-04-06)
 Audited all official LTX Desktop backend routes and settings against our UI. Changes made:

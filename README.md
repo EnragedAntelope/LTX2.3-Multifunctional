@@ -39,6 +39,7 @@ A bilingual (English/Chinese) UI wrapper and feature extension layer for **LTX D
 | **Negative prompt** | Collapsible field to override the hardcoded default |
 | **Seed control** | Lock/unlock seed with backend persistence |
 | **Upscaler toggle** | Enable/disable the built-in upscaler per generation |
+| **VRAM cap** | Set a maximum VRAM budget (GB) to control pipeline layer streaming — useful for 12–24 GB GPUs |
 | **Multi-GPU switching** | Select which CUDA device to use |
 | **Start / end frame** | Image-to-video with custom start and/or end frames |
 | **Batch keyframe generation** | Two modes: latent-space insertion or independent segment stitching |

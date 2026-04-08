@@ -68,8 +68,26 @@ def install_low_vram_on_pipelines(handler: Any) -> None:
         )
 
 
+def get_vram_limit() -> float | None:
+    """Read the user-configured VRAM cap (in GB) from settings.json, or None if unset."""
+    try:
+        import json
+        settings_file = _ltx_desktop_config_dir() / "settings.json"
+        if settings_file.exists():
+            with open(settings_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            lim = data.get("vram_limit", "")
+            if lim != "":
+                return float(lim)
+    except Exception:
+        pass
+    return None
+
+
 def install_low_vram_pipeline_hooks(pl: Any) -> None:
-    """在 load_gpu_pipeline / load_a2v 返回后尝试 Diffusers 式 CPU offload（无则静默）。"""
+    """在 load_gpu_pipeline / load_a2v 返回后尝试 Diffusers 式 CPU offload（无则静默）。
+    Also patches pipeline __call__ to dynamically tune streaming_prefetch_count per VRAM limit.
+    """
     if getattr(pl, "_ltx_low_vram_hooks_installed", False):
         return
     pl._ltx_low_vram_hooks_installed = True
@@ -97,6 +115,52 @@ def install_low_vram_pipeline_hooks(pl: Any) -> None:
             return r
 
         pl.load_a2v_pipeline = types.MethodType(_load_a2v_wrapped, pl)
+
+    # Patch pipeline __call__ to inject streaming_prefetch_count based on vram_limit setting.
+    # streaming_prefetch_count controls how many DiT layers are prefetched to GPU at once.
+    # Empirical model: count=1 → ~10GB peak, each +1 count adds ~0.67GB; count=None → ~26GB.
+    if not getattr(pl, "_ltx_layer_streaming_patched", False):
+        pl._ltx_layer_streaming_patched = True
+
+        def _patch_pipeline_class(cls_name: str, mod_name: str) -> None:
+            import importlib
+            try:
+                mod = importlib.import_module(mod_name)
+                pipeline_cls = getattr(mod, cls_name)
+                _orig_call = pipeline_cls.__call__
+
+                def _patched_call(self: Any, *args: Any, **kwargs: Any) -> Any:
+                    lim = get_vram_limit()
+                    if lim is not None:
+                        if lim == 0:
+                            # 0 = unlimited: disable layer streaming entirely, fastest path
+                            kwargs["streaming_prefetch_count"] = None
+                            logger.info("vram_limit: unlimited (0) — layer streaming disabled.")
+                        else:
+                            if lim <= 10.0:
+                                count = 1
+                            elif lim >= 25.0:
+                                count = None  # close enough to max, don't restrict
+                            else:
+                                extra_gb = float(lim) - 10.0
+                                count = max(1, min(32, 1 + round(extra_gb / 0.67)))
+                            kwargs["streaming_prefetch_count"] = count
+                            logger.info(
+                                "vram_limit: %.1fGB → streaming_prefetch_count=%s",
+                                lim,
+                                count,
+                            )
+                    return _orig_call(self, *args, **kwargs)
+
+                pipeline_cls.__call__ = _patched_call
+                logger.info("vram_limit: patched %s.__call__", cls_name)
+            except Exception:
+                pass  # module not present in this LTX Desktop version — skip silently
+
+        _patch_pipeline_class("DistilledPipeline", "ltx_pipelines.distilled")
+        _patch_pipeline_class("LTXRetakePipeline", "services.retake_pipeline.ltx_retake_pipeline")
+        _patch_pipeline_class("ICLoRAPipeline", "services.ic_lora_pipeline.ltx_ic_lora_pipeline")
+        _patch_pipeline_class("A2VPipeline", "services.a2v_pipeline.distilled_a2v_pipeline")
 
 
 def try_sequential_offload_on_pipeline_state(state: Any) -> None:

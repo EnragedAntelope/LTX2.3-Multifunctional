@@ -498,6 +498,42 @@ def create_app(
 
         return {"status": "ok", "enabled": enabled}
 
+    # ---- VRAM limit endpoints ----
+    @app.get("/api/vram-limit")
+    async def route_get_vram_limit():
+        """Return the user-configured VRAM cap (GB). Empty string means no cap."""
+        import json
+        settings_file = _ltx_desktop_config_dir() / "settings.json"
+        try:
+            if settings_file.exists():
+                with open(settings_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return {"vramLimit": data.get("vram_limit", "")}
+        except Exception as e:
+            return {"vramLimit": "", "error": str(e)}
+        return {"vramLimit": ""}
+
+    @app.post("/api/vram-limit")
+    async def route_save_vram_limit(request: Request):
+        """Persist the VRAM cap. Sends empty string to remove the cap."""
+        import json
+        try:
+            body = await request.json()
+            limit = body.get("vramLimit", "")
+            settings_file = _ltx_desktop_config_dir() / "settings.json"
+            if settings_file.exists():
+                with open(settings_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            else:
+                data = {}
+            data["vram_limit"] = limit
+            settings_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(settings_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return {"status": "ok", "vramLimit": limit}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
     @app.post("/api/system/set-dir")
     async def route_set_dir(request: Request):
         try:

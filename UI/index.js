@@ -285,6 +285,40 @@
         });
     }
 
+    // VRAM limit
+    async function initVramLimit() {
+        try {
+            const res = await fetch(`${BASE}/api/vram-limit`);
+            const data = await res.json();
+            const input = document.getElementById('vram-limit-input');
+            if (input && data.vramLimit !== undefined && data.vramLimit !== '') {
+                input.value = data.vramLimit;
+            }
+        } catch (e) { /* non-fatal */ }
+    }
+
+    window.saveVramLimit = async function () {
+        const input = document.getElementById('vram-limit-input');
+        const status = document.getElementById('vram-limit-status');
+        const val = input ? input.value.trim() : '';
+        try {
+            const res = await fetch(`${BASE}/api/vram-limit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vramLimit: val })
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                if (status) status.textContent = _t('vramLimitSaved');
+                addLog(_t('logVramLimitSaved') + (val === '' || val === '0' ? ` (${_t('vramLimitUnlimited')})` : ` (${val} GB)`));
+            } else {
+                if (status) status.textContent = `❌ ${data.message || _t('logError')}`;
+            }
+        } catch (e) {
+            if (status) status.textContent = `❌ ${e.message}`;
+        }
+    };
+
     // LM Studio model list fetch — proxied through backend to avoid browser CORS/mixed-content issues
     async function fetchLmStudioModels() {
         const urlInput = document.getElementById('lm-studio-url');
@@ -586,6 +620,7 @@
             initLmStudioToggle();
             initSeedControl();
             initUpscalerToggle();
+            initVramLimit();
 
             // ── Restore & wire ALL persistent UI state ──────────────────────
 
