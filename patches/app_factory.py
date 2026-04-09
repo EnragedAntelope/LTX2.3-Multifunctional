@@ -566,16 +566,19 @@ def create_app(
         return {"status": "success", "directory": str(get_dynamic_output_path())}
 
     @app.get("/api/system/browse-dir")
-    async def route_browse_dir():
+    async def route_browse_dir(request: Request):
+        description = request.query_params.get("description", "Select folder")
         try:
             import subprocess
 
             # 强制置顶对话框 / Force dialog to top via STA thread + Topmost attribute
+            # Escape single quotes in description to avoid breaking the PowerShell string
+            safe_desc = description.replace("'", "''")
             ps_script = (
                 "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;"
                 "[System.Reflection.Assembly]::LoadWithPartialName('System.Drawing') | Out-Null;"
                 "$f = New-Object System.Windows.Forms.FolderBrowserDialog;"
-                "$f.Description = 'Select LTX output folder';"
+                f"$f.Description = '{safe_desc}';"
                 "$f.ShowNewFolderButton = $true;"
                 # 创建助手窗口 / Create helper window as parent to keep dialog on top
                 "$owner = New-Object System.Windows.Forms.Form;"
@@ -683,6 +686,40 @@ def create_app(
             return {"modelsDir": "", "useLocalTextEncoder": True}
         except Exception as e:
             return {"modelsDir": "", "useLocalTextEncoder": True, "error": str(e)}
+
+    @app.get("/api/text-encoder-path")
+    async def route_get_text_encoder_path():
+        """Get the user-specified custom Gemma encoder directory path."""
+        try:
+            import json
+            settings_file = _ltx_desktop_config_dir() / "settings.json"
+            if settings_file.exists():
+                with open(settings_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return {"customEncoderPath": data.get("custom_text_encoder_path", "")}
+            return {"customEncoderPath": ""}
+        except Exception as e:
+            return {"customEncoderPath": "", "error": str(e)}
+
+    @app.post("/api/text-encoder-path")
+    async def route_save_text_encoder_path(request: Request):
+        """Save a custom Gemma encoder directory path to settings."""
+        try:
+            import json
+            body = await request.json()
+            encoder_path = body.get("customEncoderPath", "").strip()
+            settings_file = _ltx_desktop_config_dir() / "settings.json"
+            if settings_file.exists():
+                with open(settings_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            else:
+                data = {}
+            data["custom_text_encoder_path"] = encoder_path
+            with open(settings_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            return {"status": "ok", "customEncoderPath": encoder_path}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     @app.get("/api/loras")
     async def route_list_loras(request: Request):

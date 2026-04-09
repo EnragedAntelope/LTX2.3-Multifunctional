@@ -285,6 +285,20 @@
             logCancelFailed: '取消请求失败',
             // --- Image count ---
             numImagesLabel: '生成数量',
+            // --- Custom encoder ---
+            customEncoderLabel: '自定义编码器目录（可选）',
+            customEncoderPh: '例如: F:\\models\\my-gemma',
+            customEncoderSaved: '编码器目录已保存',
+            customEncoderNote: '覆盖默认 Gemma 目录。必须是模型文件夹，不是单个文件。',
+            logCustomEncoderSaved: '自定义编码器目录已保存',
+            // --- Render queue ---
+            addToQueue: '加入队列',
+            queueLabel: '渲染队列',
+            queueClear: '清空队列',
+            logQueued: '已加入队列',
+            logQueueNext: '开始执行队列中下一个任务',
+            browse: '浏览',
+            save: '保存',
         },
         en: {
             tabVideo: 'Video',
@@ -566,6 +580,20 @@
             logCancelFailed: 'Cancel request failed',
             // --- Image count ---
             numImagesLabel: 'Count',
+            // --- Custom encoder ---
+            customEncoderLabel: 'Custom encoder directory (optional)',
+            customEncoderPh: 'e.g. F:\\models\\my-gemma',
+            customEncoderSaved: 'Encoder directory saved',
+            customEncoderNote: 'Overrides default Gemma folder. Must be a model directory, not a single file.',
+            logCustomEncoderSaved: 'Custom encoder directory saved',
+            // --- Render queue ---
+            addToQueue: 'Add to Queue',
+            queueLabel: 'Render Queue',
+            queueClear: 'Clear Queue',
+            logQueued: 'Added to queue',
+            logQueueNext: 'Starting next queued job',
+            browse: 'Browse',
+            save: 'Save',
         },
     };
 

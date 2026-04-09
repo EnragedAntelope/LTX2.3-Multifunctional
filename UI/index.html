@@ -116,6 +116,14 @@
             </div>
             <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 8px;" data-i18n="textEncoderToggleDesc">When off, uses API encoding (requires Gemini API Key)</div>
 
+            <label style="font-size: 10px; margin-bottom: 4px; color: var(--text-dim);" data-i18n="customEncoderLabel">Custom encoder directory (optional)</label>
+            <div style="display: flex; gap: 4px; margin-bottom: 2px;">
+                <input type="text" id="custom-encoder-path" style="flex: 1; height: 28px; font-size: 11px; padding: 0 10px;" data-i18n-placeholder="customEncoderPh" placeholder="e.g. F:\models\my-gemma">
+                <button type="button" id="browse-encoder-btn" class="btn-outline" style="font-size: 10px; padding: 2px 8px; white-space: nowrap;" data-i18n="browse">Browse</button>
+                <button type="button" id="save-encoder-path-btn" class="btn-outline" style="font-size: 10px; padding: 2px 8px; white-space: nowrap;" data-i18n="save">Save</button>
+            </div>
+            <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 8px;" data-i18n="customEncoderNote">Overrides default Gemma folder. Must be a model directory, not a single file.</div>
+
             <button type="button" id="save-scan-dirs-btn" class="btn-outline" style="font-size: 11px; padding: 4px 12px;" data-i18n="saveScan">Save & Scan</button>
 
             <div id="lora-placement-hint" style="font-size: 10px; color: var(--text-dim); margin-top: 8px; line-height: 1.4;"></div>
@@ -501,7 +509,16 @@
 
     <div style="padding: 0 30px 30px 30px;">
         <button class="btn-primary" id="mainBtn" onclick="run()" data-i18n="mainRender">开始渲染</button>
+        <button class="btn-outline" id="addToQueueBtn" onclick="addToQueue()" style="margin-top: 6px; width: 100%; font-size: 12px;" data-i18n="addToQueue">Add to Queue</button>
         <button class="btn-outline" id="cancelBtn" onclick="cancelGeneration()" style="display:none; margin-top: 8px; width: 100%; color: #f87171; border-color: rgba(248,113,113,0.4);" data-i18n="cancelGeneration">Cancel</button>
+
+        <div id="queue-panel" style="display:none; margin-top: 10px; padding: 8px 10px; background: var(--bg-secondary, rgba(255,255,255,0.04)); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <span style="font-size:11px; font-weight:600; color:var(--text-sub);" data-i18n="queueLabel">Render Queue</span>
+                <button onclick="clearQueue()" style="font-size:10px; padding:2px 8px; background:transparent; border:1px solid rgba(248,113,113,0.4); border-radius:4px; color:#f87171; cursor:pointer;" data-i18n="queueClear">Clear Queue</button>
+            </div>
+            <ol id="queue-list" style="margin:0; padding-left:16px;"></ol>
+        </div>
     </div>
 </aside>
 

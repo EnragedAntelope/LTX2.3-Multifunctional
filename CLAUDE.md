@@ -91,6 +91,7 @@ These are the official backend routers imported by our patched `app_factory.py`:
 | `/api/system/seed-settings` | GET/POST | Read/write seed lock state and locked seed value |
 | `/api/system/upscaler` | GET/POST | Toggle built-in upscaler on/off |
 | `/api/vram-limit` | GET/POST | Read/write user-configured VRAM cap (GB) stored in settings.json |
+| `/api/text-encoder-path` | GET/POST | Read/write custom Gemma encoder directory path stored in settings.json |
 
 ### Backend Model Types (from `api_types.py`)
 
@@ -127,11 +128,23 @@ The `should_use_local_encoding()` method on `TextHandler` decides which path to 
 
 ## LTX Desktop Version Compatibility
 
-**At the start of every session working on this repo**, check the installed LTX Desktop version:
+**Currently supported version: LTX Desktop v1.0.4** (backend `pyproject.toml` version `1.0.0`)
+
+**At the start of every session working on this repo**, check the latest LTX Desktop release at:
 
 ```
-%LOCALAPPDATA%\Programs\LTX Desktop\resources\app\package.json   # "version" field
+https://github.com/Lightricks/LTX-Desktop/releases
 ```
+
+To check the version installed on this machine, read:
+
+```
+{BACKEND_DIR}/pyproject.toml   # "version" field under [project]
+```
+
+Where `BACKEND_DIR` = `%LOCALAPPDATA%\Programs\LTX Desktop\resources\backend\pyproject.toml`.
+
+The currently expected backend version is `1.0.0` (corresponding to LTX Desktop v1.0.4). If the installed version differs, audit the diff before making any other changes. `main.py` will print a warning at startup if a version mismatch is detected.
 
 Then verify our patches are still compatible:
 - Confirm all official routers we import in `app_factory.py` still exist under `_routes/`
@@ -182,6 +195,26 @@ Audited all official LTX Desktop backend routes and settings against our UI. Cha
 - **Bug fix: `model` field** — All generation payloads were sending `"ltx-2"` (invalid for the API path); fixed to `"fast"`. Locally our patch ignores this, but in API-forced mode the official handler maps `"fast"` → `"ltx-2-3-fast"` and rejects unknown values.
 - **Cancel button** — Added "Cancel" button (`POST /api/generate/cancel`) that appears during generation and hides when done. The backend already had this endpoint; we had no UI for it.
 - **numImages for image generation** — Exposed as a number input (1–8) instead of hardcoded `1`.
+
+### Render Queue, Custom Encoder, Version Pinning (done 2026-04-09)
+
+**Render Queue:**
+- **`UI/index.js`** — Added `buildCurrentJob()` (captures current form state as a payload object), `renderQueue` array, `addToQueue()`, `clearQueue()`, `updateQueueUI()`. Refactored `run(prebuiltJob=null)` to accept pre-built jobs. After each `finally` block, auto-starts the next queued job with a 600ms delay. Queue is preserved across cancellations.
+- **`UI/index.html`** — Added "Add to Queue" button below the main Render button, and a collapsible queue panel showing pending jobs with a Clear Queue button.
+- **`UI/i18n.js`** — Added `addToQueue`, `queueLabel`, `queueClear`, `logQueued`, `logQueueNext` in both zh and en.
+
+**Custom Text Encoder Directory:**
+- **`patches/handlers/video_generation_handler.py`** — Added `_read_custom_encoder_path()` helper that reads `custom_text_encoder_path` from settings.json. Added override at both `gemma_root` call sites (lines ~216 and ~303 after shift). The override is logged at INFO level.
+- **`patches/app_factory.py`** — Added `GET /api/text-encoder-path` and `POST /api/text-encoder-path` endpoints (persist to settings.json).
+- **`UI/index.html`** — Added directory input + Browse + Save buttons below the local encoder toggle.
+- **`UI/index.js`** — Added `initCustomEncoderPath()` (loads saved path on startup) and DOMContentLoaded wiring for Browse/Save buttons.
+- **`UI/i18n.js`** — Added `customEncoderLabel`, `customEncoderPh`, `customEncoderSaved`, `customEncoderNote`, `logCustomEncoderSaved`, `browse`, `save` in both zh and en.
+- **Note**: The "text encoder" is a Gemma model **folder** (~25 GB), not a single file. UI copy makes this clear.
+
+**Version Pinning:**
+- **`README.md`** — Changed download link to specific v1.0.4 GitHub release. Added version-lock notice.
+- **`CLAUDE.md`** — Updated version check instructions to use `https://github.com/Lightricks/LTX-Desktop/releases` and `BACKEND_DIR/pyproject.toml` version field. Documents backend `1.0.0` = LTX Desktop `1.0.4`.
+- **`main.py`** — Added `_check_ltx_version()` that reads `pyproject.toml` and prints a prominent warning if the installed backend version doesn't match `1.0.0`. Uses `tomllib` (stdlib in Python 3.11+) or `tomli`; skips silently if neither is available.
 
 ## Future Work (Do Not Implement Yet — Log Only)
 

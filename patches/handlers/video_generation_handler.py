@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tempfile
@@ -11,6 +12,20 @@ from datetime import datetime
 from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING
+
+
+def _read_custom_encoder_path() -> str | None:
+    """Return user-specified Gemma encoder directory override, or None to use default.
+    Read from custom_text_encoder_path in LTXDesktop settings.json.
+    / 从 settings.json 读取用户自定义 Gemma 编码器目录，未设置则返回 None。
+    """
+    cfg = Path(os.environ.get("LOCALAPPDATA", "")) / "LTXDesktop" / "settings.json"
+    try:
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+        p = data.get("custom_text_encoder_path", "").strip()
+        return p if p else None
+    except Exception:
+        return None
 
 from PIL import Image
 
@@ -199,6 +214,11 @@ class VideoGenerationHandler(StateHandlerBase):
                     pass
 
                 gemma_root = self._pipelines._text_handler.resolve_gemma_root()
+                # Apply custom encoder directory override if user has set one / 应用用户自定义编码器目录
+                _custom_enc = _read_custom_encoder_path()
+                if _custom_enc:
+                    logger.info("Custom text encoder override: %s", _custom_enc)
+                    gemma_root = _custom_enc
                 from runtime_config.model_download_specs import resolve_model_path
                 from services.fast_video_pipeline.ltx_fast_video_pipeline import (
                     LTXFastVideoPipeline,
@@ -282,6 +302,11 @@ class VideoGenerationHandler(StateHandlerBase):
                 gc.collect()
 
                 gemma_root = self._pipelines._text_handler.resolve_gemma_root()
+                # Apply custom encoder directory override if user has set one / 应用用户自定义编码器目录
+                _custom_enc = _read_custom_encoder_path()
+                if _custom_enc:
+                    logger.info("Custom text encoder override: %s", _custom_enc)
+                    gemma_root = _custom_enc
                 from runtime_config.model_download_specs import resolve_model_path
                 from services.fast_video_pipeline.ltx_fast_video_pipeline import (
                     LTXFastVideoPipeline,

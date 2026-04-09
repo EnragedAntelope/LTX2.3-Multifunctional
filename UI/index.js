@@ -285,16 +285,22 @@
         });
     }
 
-    // VRAM limit
+    // VRAM limit — persisted to backend settings.json; localStorage used as display fallback
     async function initVramLimit() {
+        const input = document.getElementById('vram-limit-input');
+        if (!input) return;
+        // Show last-saved value immediately from localStorage (instant, no backend needed)
+        const cached = localStorage.getItem('setting_vram_limit');
+        if (cached !== null && cached !== '') input.value = cached;
+        // Then sync from backend (authoritative) and update cache
         try {
             const res = await fetch(`${BASE}/api/vram-limit`);
             const data = await res.json();
-            const input = document.getElementById('vram-limit-input');
-            if (input && data.vramLimit !== undefined && data.vramLimit !== '') {
+            if (data.vramLimit !== undefined && data.vramLimit !== '') {
                 input.value = data.vramLimit;
+                localStorage.setItem('setting_vram_limit', data.vramLimit);
             }
-        } catch (e) { /* non-fatal */ }
+        } catch (e) { /* backend not ready yet; cached value already shown */ }
     }
 
     window.saveVramLimit = async function () {
@@ -309,6 +315,7 @@
             });
             const data = await res.json();
             if (data.status === 'ok') {
+                localStorage.setItem('setting_vram_limit', val);
                 if (status) status.textContent = _t('vramLimitSaved');
                 addLog(_t('logVramLimitSaved') + (val === '' || val === '0' ? ` (${_t('vramLimitUnlimited')})` : ` (${val} GB)`));
             } else {
@@ -318,6 +325,70 @@
             if (status) status.textContent = `❌ ${e.message}`;
         }
     };
+
+    // Custom text encoder directory — persisted to backend settings.json; localStorage fallback for display
+    async function initCustomEncoderPath() {
+        const input = document.getElementById('custom-encoder-path');
+        if (!input) return;
+        // Show last-saved value immediately from localStorage
+        const cached = localStorage.getItem('setting_custom_encoder_path');
+        if (cached) input.value = cached;
+        // Sync from backend and update cache
+        try {
+            const res = await fetch(`${BASE}/api/text-encoder-path`);
+            const data = await res.json();
+            if (data.customEncoderPath) {
+                input.value = data.customEncoderPath;
+                localStorage.setItem('setting_custom_encoder_path', data.customEncoderPath);
+            } else if (data.customEncoderPath === '') {
+                // Explicitly cleared on backend — clear the cached display too
+                localStorage.removeItem('setting_custom_encoder_path');
+                if (!cached) input.value = '';
+            }
+        } catch (e) { /* backend not ready yet; cached value already shown */ }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const browseBtn = document.getElementById('browse-encoder-btn');
+        if (browseBtn) {
+            browseBtn.addEventListener('click', async () => {
+                try {
+                    // Pass a meaningful dialog title / 传递有意义的对话框标题
+                    const res = await fetch(`${BASE}/api/system/browse-dir?description=Select+Gemma+encoder+folder`);
+                    const data = await res.json();
+                    if (data.directory) {  // endpoint returns 'directory', not 'path'
+                        const input = document.getElementById('custom-encoder-path');
+                        if (input) input.value = data.directory;
+                    }
+                } catch (e) { /* ignore */ }
+            });
+        }
+        const saveBtn = document.getElementById('save-encoder-path-btn');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', async () => {
+                const input = document.getElementById('custom-encoder-path');
+                const val = input ? input.value.trim() : '';
+                try {
+                    const res = await fetch(`${BASE}/api/text-encoder-path`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ customEncoderPath: val })
+                    });
+                    const data = await res.json();
+                    if (data.status === 'ok') {
+                        if (val) {
+                            localStorage.setItem('setting_custom_encoder_path', val);
+                        } else {
+                            localStorage.removeItem('setting_custom_encoder_path');
+                        }
+                        addLog(`✅ ${_t('logCustomEncoderSaved')}` + (val ? `: ${val}` : ' (cleared)'));
+                    }
+                } catch (e) {
+                    addLog(`❌ ${e.message}`);
+                }
+            });
+        }
+    });
 
     // LM Studio model list fetch — proxied through backend to avoid browser CORS/mixed-content issues
     async function fetchLmStudioModels() {
@@ -621,6 +692,7 @@
             initSeedControl();
             initUpscalerToggle();
             initVramLimit();
+            initCustomEncoderPath();
 
             // ── Restore & wire ALL persistent UI state ──────────────────────
 
@@ -1777,7 +1849,7 @@
 
     async function browseOutputDir() {
         try {
-            const res = await fetch(`${BASE}/api/system/browse-dir`);
+            const res = await fetch(`${BASE}/api/system/browse-dir?description=Select+output+folder`);
             const data = await res.json();
             if (data.status === "success" && data.directory) {
                 document.getElementById('global-out-dir').value = data.directory;
@@ -1842,7 +1914,196 @@
         if (loadingTxt) loadingTxt.style.display = "flex";
     }
 
-    async function run() {
+    // Build the current job payload from form state. Returns {endpoint, payload, label}.
+    // Throws with a user-visible message if validation fails.
+    // Used by addToQueue(); run() still builds inline for the direct path.
+    async function buildCurrentJob() {
+        const promptEl = document.getElementById('prompt');
+        const prompt = promptEl ? promptEl.value.trim() : '';
+
+        // LM Studio enhancement
+        const lmEnabled = !!(document.getElementById('lm-studio-enabled') || {}).checked;
+        const enhanceChecked = !!(document.getElementById('enhance-on-generate') || {}).checked;
+        if (lmEnabled && enhanceChecked && prompt) {
+            try {
+                const enhanced = await _callEnhanceApi(prompt);
+                _showEnhancedPrompt(enhanced);
+            } catch (_) { /* non-fatal — use raw prompt */ }
+        }
+        const effectivePrompt = getEffectivePrompt() || prompt;
+
+        if (currentMode !== 'upscale') {
+            if (currentMode === 'batch') {
+                const c = document.getElementById('batch-common-prompt')?.value?.trim();
+                const hasSegPrompt = batchImages.slice(0, -1).some((_, i) =>
+                    document.getElementById(`batch-segment-prompt-${i}`)?.value?.trim());
+                if (!prompt && !c && !hasSegPrompt) throw new Error(_t('warnBatchPrompt'));
+                if (batchImages.length < 2) throw new Error(_t('errBatchMinImages'));
+            } else if (!prompt) {
+                throw new Error(_t('warnNeedPrompt'));
+            }
+        }
+
+        let endpoint, payload, label;
+
+        if (currentMode === 'image') {
+            const w = parseInt(document.getElementById('img-w').value);
+            const h = parseInt(document.getElementById('img-h').value);
+            endpoint = '/api/generate-image';
+            payload = {
+                prompt: effectivePrompt, width: w, height: h,
+                numSteps: parseInt(document.getElementById('img-steps').value),
+                numImages: parseInt(document.getElementById('img-num-images')?.value) || 1
+            };
+            label = `[image] ${effectivePrompt.slice(0, 50)}`;
+
+        } else if (currentMode === 'video') {
+            const res = updateResPreview();
+            const dur = parseFloat(document.getElementById('vid-duration').value);
+            const fps = document.getElementById('vid-fps').value;
+            const audio = document.getElementById('vid-audio').checked ? "true" : "false";
+            const audioPath = document.getElementById('uploaded-audio-path').value;
+            const startFramePathValue = document.getElementById('start-frame-path').value;
+            const endFramePathValue = document.getElementById('end-frame-path').value;
+            let finalImagePath = null, finalStartFramePath = null, finalEndFramePath = null;
+            if (startFramePathValue && endFramePathValue) {
+                finalStartFramePath = startFramePathValue; finalEndFramePath = endFramePathValue;
+            } else if (startFramePathValue) {
+                finalImagePath = startFramePathValue;
+            }
+            const modelPath = document.getElementById('vid-model')?.value || '';
+            const loraPath = document.getElementById('vid-lora')?.value || '';
+            const loraStrength = parseFloat(document.getElementById('lora-strength')?.value) || 1.0;
+            endpoint = '/api/generate';
+            payload = {
+                prompt: effectivePrompt, resolution: res, model: "fast",
+                cameraMotion: document.getElementById('vid-motion').value,
+                negativePrompt: getNegativePrompt(),
+                inferenceSteps: parseInt(document.getElementById('vid-inference-steps').value) || 8,
+                duration: String(dur), fps, audio,
+                imagePath: finalImagePath, audioPath: audioPath || null,
+                startFramePath: finalStartFramePath, endFramePath: finalEndFramePath,
+                aspectRatio: document.getElementById('vid-ratio').value,
+                modelPath: modelPath || null, loraPath: loraPath || null, loraStrength,
+            };
+            label = `[video ${res} ${dur}s] ${effectivePrompt.slice(0, 40)}`;
+
+        } else if (currentMode === 'upscale') {
+            const videoPath = document.getElementById('upscale-video-path').value;
+            const targetRes = document.getElementById('upscale-res').value;
+            if (!videoPath) throw new Error(_t('errUpscaleNoVideo'));
+            endpoint = '/api/system/upscale-video';
+            payload = { video_path: videoPath, resolution: targetRes, prompt: "high quality, detailed, 4k", strength: 0.7 };
+            label = `[upscale ${targetRes}] ${videoPath.split(/[/\\]/).pop()}`;
+
+        } else if (currentMode === 'batch') {
+            const res = updateBatchResPreview();
+            const commonPrompt = document.getElementById('batch-common-prompt')?.value || '';
+            const modelPath = document.getElementById('batch-model')?.value || '';
+            const loraPath = document.getElementById('batch-lora')?.value || '';
+            const loraStrength = parseFloat(document.getElementById('batch-lora-strength')?.value) || 1.2;
+
+            if (batchWorkflowIsSingle()) {
+                captureBatchKfTimelineFromDom();
+                const fps = document.getElementById('vid-fps').value;
+                const combinedPrompt = [effectivePrompt.trim(), commonPrompt.trim()].filter(Boolean).join(', ');
+                if (!combinedPrompt) throw new Error(_t('errSingleKfPrompt'));
+                const nKf = batchImages.length;
+                const minSeg = 0.1;
+                const segDurs = [];
+                for (let j = 0; j < nKf - 1; j++) {
+                    let v = parseFloat(document.getElementById(`batch-kf-seg-dur-${j}`)?.value);
+                    if (!Number.isFinite(v) || v < minSeg) v = minSeg;
+                    segDurs.push(v);
+                }
+                const sumSec = segDurs.reduce((a, b) => a + b, 0);
+                const dur = Math.max(2, Math.ceil(sumSec - 1e-9));
+                const times = [0];
+                let acc = 0;
+                for (let j = 0; j < nKf - 1; j++) { acc += segDurs[j]; times.push(acc); }
+                const strengths = [];
+                for (let i = 0; i < nKf; i++) {
+                    const sEl = document.getElementById(`batch-kf-strength-${i}`);
+                    let sv = parseFloat(sEl?.value);
+                    if (!Number.isFinite(sv)) sv = parseFloat(defaultKeyframeStrengthForIndex(i, nKf));
+                    if (!Number.isFinite(sv)) sv = 1;
+                    strengths.push(Math.max(0.1, Math.min(1.0, sv)));
+                }
+                endpoint = '/api/generate';
+                payload = {
+                    prompt: combinedPrompt, resolution: res, model: "fast",
+                    cameraMotion: document.getElementById('vid-motion').value,
+                    negativePrompt: getNegativePrompt(),
+                    inferenceSteps: parseInt(document.getElementById('batch-inference-steps').value) || 8,
+                    duration: String(dur), fps, audio: "false",
+                    imagePath: null, audioPath: null, startFramePath: null, endFramePath: null,
+                    keyframePaths: batchImages.map(b => b.path),
+                    keyframeStrengths: strengths, keyframeTimes: times,
+                    aspectRatio: document.getElementById('batch-ratio').value,
+                    modelPath: modelPath || null, loraPath: loraPath || null, loraStrength,
+                };
+                label = `[batch-kf ${nKf}×] ${combinedPrompt.slice(0, 40)}`;
+            } else {
+                const segments = [];
+                for (let i = 0; i < batchImages.length - 1; i++) {
+                    const duration = parseFloat(document.getElementById(`batch-segment-duration-${i}`)?.value || 5);
+                    const segParts = [effectivePrompt.trim(), commonPrompt.trim(),
+                        document.getElementById(`batch-segment-prompt-${i}`)?.value?.trim() || ''].filter(Boolean);
+                    segments.push({ startImage: batchImages[i].path, endImage: batchImages[i+1].path, duration, prompt: segParts.join(', ') });
+                }
+                const bgAudioEl = document.getElementById('batch-background-audio-path');
+                const backgroundAudioPath = bgAudioEl?.value?.trim() || null;
+                endpoint = '/api/generate-batch';
+                payload = {
+                    segments, resolution: res, model: "fast",
+                    aspectRatio: document.getElementById('batch-ratio').value,
+                    modelPath: modelPath || null, loraPath: loraPath || null, loraStrength,
+                    negativePrompt: getNegativePrompt(),
+                    inferenceSteps: parseInt(document.getElementById('batch-inference-steps').value) || 8,
+                    backgroundAudioPath: backgroundAudioPath || null
+                };
+                label = `[batch-seg ${segments.length}×] ${effectivePrompt.slice(0, 40)}`;
+            }
+        }
+
+        return { endpoint, payload, label };
+    }
+
+    // Render queue — array of {endpoint, payload, label} objects
+    let renderQueue = [];
+
+    function updateQueueUI() {
+        const panel = document.getElementById('queue-panel');
+        const list = document.getElementById('queue-list');
+        if (!panel || !list) return;
+        if (renderQueue.length === 0) {
+            panel.style.display = 'none';
+            return;
+        }
+        panel.style.display = 'block';
+        list.innerHTML = renderQueue.map((job, i) =>
+            `<li style="font-size:11px;color:var(--text-sub);padding:2px 0;">${i + 1}. ${escapeHtmlAttr(job.label)}</li>`
+        ).join('');
+    }
+
+    window.addToQueue = async function () {
+        try {
+            const job = await buildCurrentJob();
+            renderQueue.push(job);
+            updateQueueUI();
+            addLog(`📋 ${_t('logQueued')}: ${job.label}`);
+        } catch (e) {
+            addLog(`❌ ${e.message}`);
+        }
+    };
+
+    window.clearQueue = function () {
+        renderQueue = [];
+        updateQueueUI();
+        addLog('🗑 Queue cleared');
+    };
+
+    async function run(prebuiltJob = null) {
         // 防止重复点击（_isGeneratingFlag 比 btn.disabled 更可靠）
         if (_isGeneratingFlag) {
             addLog(_t('warnGenerating'));
@@ -1850,50 +2111,54 @@
         }
 
         const btn = document.getElementById('mainBtn');
-        const promptEl = document.getElementById('prompt');
-        const prompt = promptEl ? promptEl.value.trim() : '';
+        let effectivePrompt = '';
 
-        // Auto-enhance prompt via LM Studio if checkbox is checked
-        const lmEnabled = !!(document.getElementById('lm-studio-enabled') || {}).checked;
-        const enhanceChecked = !!(document.getElementById('enhance-on-generate') || {}).checked;
-        if (lmEnabled && enhanceChecked && prompt) {
-            addLog('✨ ' + _t('logEnhancingPrompt'));
-            try {
-                const enhanced = await _callEnhanceApi(prompt);
-                _showEnhancedPrompt(enhanced);
-                addLog('✅ ' + _t('logPromptEnhanced'));
-            } catch (e) {
-                addLog('⚠️ ' + _t('logEnhanceFailed') + ': ' + (e.message || e));
-                // Continue with original prompt — don't abort render
+        if (!prebuiltJob) {
+            const promptEl = document.getElementById('prompt');
+            const prompt = promptEl ? promptEl.value.trim() : '';
+
+            // Auto-enhance prompt via LM Studio if checkbox is checked
+            const lmEnabled = !!(document.getElementById('lm-studio-enabled') || {}).checked;
+            const enhanceChecked = !!(document.getElementById('enhance-on-generate') || {}).checked;
+            if (lmEnabled && enhanceChecked && prompt) {
+                addLog('✨ ' + _t('logEnhancingPrompt'));
+                try {
+                    const enhanced = await _callEnhanceApi(prompt);
+                    _showEnhancedPrompt(enhanced);
+                    addLog('✅ ' + _t('logPromptEnhanced'));
+                } catch (e) {
+                    addLog('⚠️ ' + _t('logEnhanceFailed') + ': ' + (e.message || e));
+                    // Continue with original prompt — don't abort render
+                }
             }
-        }
 
-        // Use enhanced prompt if available, else original
-        const effectivePrompt = getEffectivePrompt() || prompt;
+            // Use enhanced prompt if available, else original
+            effectivePrompt = getEffectivePrompt() || prompt;
 
-        function batchHasUsablePrompt() {
-            if (prompt) return true;
-            const c = document.getElementById('batch-common-prompt')?.value?.trim();
-            if (c) return true;
-            if (typeof batchWorkflowIsSingle === 'function' && batchWorkflowIsSingle()) {
+            function batchHasUsablePrompt() {
+                if (prompt) return true;
+                const c = document.getElementById('batch-common-prompt')?.value?.trim();
+                if (c) return true;
+                if (typeof batchWorkflowIsSingle === 'function' && batchWorkflowIsSingle()) {
+                    return false;
+                }
+                if (batchImages.length < 2) return false;
+                for (let i = 0; i < batchImages.length - 1; i++) {
+                    if (document.getElementById(`batch-segment-prompt-${i}`)?.value?.trim()) return true;
+                }
                 return false;
             }
-            if (batchImages.length < 2) return false;
-            for (let i = 0; i < batchImages.length - 1; i++) {
-                if (document.getElementById(`batch-segment-prompt-${i}`)?.value?.trim()) return true;
-            }
-            return false;
-        }
 
-        if (currentMode !== 'upscale') {
-            if (currentMode === 'batch') {
-                if (!batchHasUsablePrompt()) {
-                    addLog(_t('warnBatchPrompt'));
+            if (currentMode !== 'upscale') {
+                if (currentMode === 'batch') {
+                    if (!batchHasUsablePrompt()) {
+                        addLog(_t('warnBatchPrompt'));
+                        return;
+                    }
+                } else if (!prompt) {
+                    addLog(_t('warnNeedPrompt'));
                     return;
                 }
-            } else if (!prompt) {
-                addLog(_t('warnNeedPrompt'));
-                return;
             }
         }
 
@@ -1956,7 +2221,12 @@
 
             // ---- 构建请求 ----
             let endpoint, payload;
-            if (currentMode === 'image') {
+            if (prebuiltJob) {
+                // Queued job: use pre-captured payload / 队列任务：使用预先捕获的载荷
+                endpoint = prebuiltJob.endpoint;
+                payload = prebuiltJob.payload;
+                addLog(`▶ ${prebuiltJob.label}`);
+            } else if (currentMode === 'image') {
                 const w = parseInt(document.getElementById('img-w').value);
                 const h = parseInt(document.getElementById('img-h').value);
                 endpoint = '/api/generate-image';
@@ -2030,7 +2300,7 @@
                 const modelPath = modelSelect ? modelSelect.value : '';
                 const loraPath = loraSelect ? loraSelect.value : '';
                 const loraStrength = loraStrengthInput ? (parseFloat(loraStrengthInput.value) || 1.2) : 1.2;
-                
+
                 if (batchImages.length < 2) {
                     throw new Error(_t('errBatchMinImages'));
                 }
@@ -2177,6 +2447,13 @@
             checkStatus();
             // 生成完毕后自动释放显存（不 await 避免阻塞 UI 解锁）
             setTimeout(() => { clearGpu(); }, 500);
+            // Auto-start next queued job / 自动启动队列中的下一个任务
+            if (renderQueue.length > 0) {
+                const nextJob = renderQueue.shift();
+                addLog(`▶ ${_t('logQueueNext')} (${renderQueue.length} remaining)`);
+                updateQueueUI();
+                setTimeout(() => run(nextJob), 600);
+            }
         }
     }
 

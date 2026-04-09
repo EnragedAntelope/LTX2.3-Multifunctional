@@ -67,6 +67,35 @@ LTX_INSTALL_DIR = resolve_ltx_path()
 BACKEND_DIR = os.path.join(LTX_INSTALL_DIR, r"resources\backend")
 UI_FILE_NAME = "UI/index.html"
 
+def _check_ltx_version(backend_dir):
+    """Warn if the installed LTX Desktop backend version doesn't match what this wrapper supports."""
+    EXPECTED_BACKEND_VERSION = "1.0.0"  # corresponds to LTX Desktop v1.0.4
+    SUPPORTED_DESKTOP_VERSION = "v1.0.4"
+    pyproject = os.path.join(backend_dir, "pyproject.toml")
+    if not os.path.exists(pyproject):
+        return
+    try:
+        try:
+            import tomllib  # stdlib in Python 3.11+
+        except ImportError:
+            try:
+                import tomli as tomllib  # type: ignore[no-redef]
+            except ImportError:
+                return  # can't parse toml, skip silently
+        with open(pyproject, "rb") as f:
+            data = tomllib.load(f)
+        version = data.get("project", {}).get("version", "")
+        if version and version != EXPECTED_BACKEND_VERSION:
+            print(f"\033[1;43m [VERSION WARNING] \033[0m")
+            print(f"\033[93mDetected LTX Desktop backend version: {version}")
+            print(f"This wrapper is tested against backend {EXPECTED_BACKEND_VERSION} (LTX Desktop {SUPPORTED_DESKTOP_VERSION}).")
+            print(f"Download the correct release: https://github.com/Lightricks/LTX-Desktop/releases/tag/{SUPPORTED_DESKTOP_VERSION}")
+            print(f"Continuing anyway — things may or may not work.\033[0m\n")
+    except Exception:
+        pass  # never crash on a version check
+
+_check_ltx_version(BACKEND_DIR)
+
 # 环境致命检测 / Fatal check: if official Python hasn't been extracted yet, abort
 if not os.path.exists(PYTHON_EXE):
     print(f"\n\033[1;41m [FATAL] LTX Desktop rendering engine not found! \033[0m")

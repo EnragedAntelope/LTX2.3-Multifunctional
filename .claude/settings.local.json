@@ -21,7 +21,8 @@
       "Bash(grep -Pv \"^[0-9]+:\\\\s*//\")",
       "Bash(sort -t: -k2 -n)",
       "Bash(sort -t\"'\" -k2)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(node --check \"c:/github_projects/LTX2.3-Multifunctional/UI/i18n.js\")"
     ]
   }
 }
