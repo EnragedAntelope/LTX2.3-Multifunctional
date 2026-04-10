@@ -341,7 +341,9 @@
                 addLog(`❌ ${_t('logLmStudioConnectFail')}: ${data.error}`);
                 return;
             }
-            const currentVal = select.value;
+            // Prefer the currently displayed selection; fall back to the localStorage-saved
+            // model ID when the select has no options yet (first load before population).
+            const currentVal = select.value || localStorage.getItem('lm_studio_model') || '';
             select.innerHTML = '<option value="">' + _t('lmAutoModel') + '</option>';
             (data.models || []).forEach(m => {
                 const opt = document.createElement('option');

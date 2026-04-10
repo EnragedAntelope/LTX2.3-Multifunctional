@@ -77,6 +77,88 @@ DEFAULT_ALLOWED_ORIGINS: list[str] = ["*"]
 logger = logging.getLogger("app_factory")
 
 
+def _make_gemma_fp8_ops():
+    """Build a ModuleOps that casts all nn.Linear weights in GemmaTextEncoder to fp8.
+
+    The bundled Gemma encoder (gemma-3-12b-it-qat-q4_0-unquantized) stores weights as
+    bfloat16 in VRAM (~24 GB) despite its name. Casting to fp8 halves the footprint to
+    ~12 GB — essential to leave headroom for the spatial upscaler on 32 GB GPUs.
+
+    Applied automatically at every generation. No toggle required.
+    """
+    from ltx_core.loader.module_ops import ModuleOps
+    from ltx_core.text_encoders.gemma.encoders.base_encoder import GemmaTextEncoder
+
+    try:
+        from ltx_core.quantization.fp8_cast import Fp8CastLinear
+    except ImportError:
+        import torch as _t
+        class Fp8CastLinear(_t.nn.Linear):
+            def forward(self, input):
+                return _t.nn.functional.linear(input, self.weight.to(input.dtype), self.bias)
+
+    import torch
+
+    def _apply_fp8(module: GemmaTextEncoder) -> GemmaTextEncoder:
+        cast_count = 0
+        bytes_saved = 0
+        for submod in module.modules():
+            if (
+                isinstance(submod, torch.nn.Linear)
+                and submod.weight is not None
+                and submod.weight.dtype in (torch.float32, torch.float16, torch.bfloat16)
+            ):
+                bytes_saved += submod.weight.numel()
+                submod.weight.data = submod.weight.data.to(torch.float8_e4m3fn)
+                submod.__class__ = Fp8CastLinear
+                cast_count += 1
+        if cast_count:
+            logger.info(
+                "[PATCH] Gemma fp8: cast %d linear layers (~%.0f MB VRAM freed)",
+                cast_count, bytes_saved / 1024 / 1024,
+            )
+        return module
+
+    return ModuleOps(
+        name="gemma_fp8_linear_cast",
+        matcher=lambda m: isinstance(m, GemmaTextEncoder),
+        mutator=_apply_fp8,
+    )
+
+
+_gemma_fp8_patch_installed: bool = False
+
+
+def _ensure_gemma_fp8_encoder_patch() -> None:
+    """Wrap PromptEncoder.__init__ to always apply fp8 quantization to the Gemma encoder.
+
+    Called at the start of patched_generate_video (after ltx_text_encoder has installed
+    its own PromptEncoder patch lazily). The global flag prevents double-installation.
+    """
+    global _gemma_fp8_patch_installed
+    if _gemma_fp8_patch_installed:
+        return
+    try:
+        from ltx_pipelines.utils.blocks import PromptEncoder as _PE
+        _orig_pe_init = _PE.__init__
+
+        def _fp8_wrapped_init(self, checkpoint_path, gemma_root, dtype, device, registry=None):
+            _orig_pe_init(self, checkpoint_path, gemma_root, dtype, device, registry)
+            try:
+                fp8_ops = _make_gemma_fp8_ops()
+                self._text_encoder_builder = self._text_encoder_builder.with_module_ops(
+                    (*self._text_encoder_builder.module_ops, fp8_ops)
+                )
+            except Exception as _e:
+                logger.warning("[PATCH] Gemma fp8 builder patch failed (non-fatal): %s", _e)
+
+        _PE.__init__ = _fp8_wrapped_init
+        _gemma_fp8_patch_installed = True
+        logger.info("[PATCH] Gemma fp8 auto-quantization enabled")
+    except Exception as _e:
+        logger.warning("[PATCH] Gemma fp8 wrapper not installed: %s", _e)
+
+
 def _ltx_desktop_config_dir() -> Path:
     p = (
         Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local")))
@@ -1317,6 +1399,10 @@ def create_app(
         keyframe_strengths: list[float] | None = None,
         keyframe_times: list[float] | None = None,
     ):
+        # Install Gemma fp8 wrapper now — ltx_text_encoder installs its own PromptEncoder
+        # patch lazily before this point, so our wrapper correctly chains on top of it.
+        _ensure_gemma_fp8_encoder_patch()
+
         logger.info(
             "[PATCH] Starting inference: %dx%d, frames=%d, fps=%s, image_path=%s",
             width, height, num_frames, fps, image_path,

@@ -210,11 +210,13 @@ Feature was implemented and wired end-to-end but removed after testing showed th
 - **`CLAUDE.md`** — Updated version check instructions to use `https://github.com/Lightricks/LTX-Desktop/releases` and `BACKEND_DIR/pyproject.toml` version field. Documents backend `1.0.0` = LTX Desktop `1.0.4`.
 - **`main.py`** — Added `_check_ltx_version()` that reads `pyproject.toml` and prints a prominent warning if the installed backend version doesn't match `1.0.0`. Uses `tomllib` (stdlib in Python 3.11+) or `tomli`; skips silently if neither is available.
 
-### Gemma fp8 quantization — attempted, then reverted (done 2026-04-10)
+### Gemma fp8 auto-quantization (done 2026-04-10, made automatic 2026-04-10)
 
-Implemented fp8 quantization for the Gemma text encoder via `ModuleOps` post-load cast, then removed when the custom encoder directory feature it depended on was also removed (see above and Future Work §3).
+The bundled `gemma-3-12b-it-qat-q4_0-unquantized` stores weights as bfloat16 in VRAM (~24 GB) despite the "qat" name. fp8 casting halves this to ~12 GB — essential for spatial upscaler headroom on 32 GB GPUs. Without it, 1920x1088 + LoRA + upscaler hits OOM.
 
-**Architecture notes (for when this is re-attempted)**: The Gemma encoder uses a custom `Builder`/`SafetensorsModelStateDictLoader` pattern — `device_map` and `bitsandbytes` are inapplicable. The correct mechanism is `ModuleOps` (a `NamedTuple(name, matcher, mutator)` applied post-load by the builder). Cast all `nn.Linear.weight` tensors to `torch.float8_e4m3fn` and replace `__class__` with `Fp8CastLinear` from `ltx_core.quantization.fp8_cast`. Patch ordering: install the fp8 wrapper after `ltx_text_encoder` has installed its own `PromptEncoder.__init__` patch.
+fp8 is now applied **automatically** at every generation with no user toggle. The UI option was removed (it was originally coupled to the custom encoder feature which was removed). The VRAM saving is always beneficial on the bundled encoder.
+
+- **`patches/app_factory.py`** — `_make_gemma_fp8_ops()`, `_ensure_gemma_fp8_encoder_patch()`, `_gemma_fp8_patch_installed` global. Called at start of `patched_generate_video`.
 
 ### Code quality cleanup (done 2026-04-09)
 
@@ -254,7 +256,7 @@ Both features were implemented and then removed (2026-04-10) because alternative
 If the backend adds an official path for custom encoder directories, re-expose:
 1. Custom encoder directory input (Browse/Save) in the Settings panel
 2. `GET/POST /api/text-encoder-path` endpoints in `app_factory.py`
-3. fp8 quantization toggle (checkbox) — once the custom encoder path works, apply fp8 via `ModuleOps` as documented in the "Gemma fp8 quantization" completed-work section above.
+3. fp8 is already always-on for the bundled encoder — for custom encoders, verify compatibility before applying (the current `_make_gemma_fp8_ops` targets `GemmaTextEncoder` by type and will apply to any compatible encoder).
 
 ### 4. Local Text Encoder Selection
 Currently the backend hardcodes one local text encoder: `gemma-3-12b-it-qat-q4_0-unquantized` (defined in `model_download_specs.py`, `"text_encoder"` key). The UI toggle is binary: local Gemma vs LTX API. The backend decision lives in `TextHandler.should_use_local_encoding()` (`text_handler.py`) — the `use_local_text_encoder` setting is **only a tiebreaker** when both API key and local encoder are present; if only one is available, the setting is ignored.
