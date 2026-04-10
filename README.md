@@ -49,6 +49,7 @@ A bilingual (English/Chinese) UI wrapper and feature extension layer for **LTX D
 | **Batch keyframe generation** | Two modes: latent-space insertion or independent segment stitching |
 | **LM Studio prompt enhancement** | Enhance prompts locally via a running LM Studio instance |
 | **Local text encoder toggle** | Force local Gemma encoder instead of LTX API encoding |
+| **Custom encoder directory** | Point to an alternative Gemma model folder (overrides the bundled encoder) |
 | **Bilingual UI** | Full English / Chinese interface, switch at runtime |
 | **Model selection** | Point to a custom model directory |
 

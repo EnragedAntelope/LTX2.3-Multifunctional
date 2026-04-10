@@ -216,6 +216,16 @@ Audited all official LTX Desktop backend routes and settings against our UI. Cha
 - **`CLAUDE.md`** — Updated version check instructions to use `https://github.com/Lightricks/LTX-Desktop/releases` and `BACKEND_DIR/pyproject.toml` version field. Documents backend `1.0.0` = LTX Desktop `1.0.4`.
 - **`main.py`** — Added `_check_ltx_version()` that reads `pyproject.toml` and prints a prominent warning if the installed backend version doesn't match `1.0.0`. Uses `tomllib` (stdlib in Python 3.11+) or `tomli`; skips silently if neither is available.
 
+### Code quality cleanup (done 2026-04-09)
+
+Addressed several issues surfaced by console-output review:
+
+- **`patches/app_factory.py`** — Added `import logging` and module-level `logger = logging.getLogger("app_factory")`. Converted all `print()` calls throughout the file (patched functions, GPU-switch handler, retake pipeline, batch-merge ffmpeg discovery) to `logger.info/debug/warning/error` so output flows through the standard logging system and can be filtered by level.
+- **Removed `?attr N/A` debug probes** — `patched_generate` and `patched_generate_video` were probing `_generation_id`, `_is_generating`, `_cancelled` via `getattr` fallback. Those private attributes don't exist on `GenerationHandler`; the probes always printed `?attr N/A`. Removed.
+- **LoRA warmup skipped on high-VRAM systems** — The one-shot warmup (`load_gpu_pipeline("fast", should_warm=True)`) ran a full 8-step inference (~45 s) and left `_warmup_fast.mp4` in the outputs directory. Now skipped when available VRAM ≥ 16 GB (checked via `torch.cuda.get_device_properties`). On low-VRAM systems the warmup still runs, and the output file is deleted afterward.
+- **Warmup output file cleanup** — When the warmup does run, `_warmup_fast.mp4` is deleted from the outputs dir immediately after the pipeline is unloaded.
+- **Dead code removed from `patches/handlers/video_generation_handler.py`** — `generate()`, `generate_video()`, `_generate_a2v()`, `_generate_forced_api()`, and related helpers were never reachable (all replaced by monkey-patches in `app_factory.py`). Replaced with stub methods that raise `NotImplementedError` so static analysis still sees the correct shape. Kept only `_prepare_image` and `_resolve_seed`, which the patches do call.
+
 ## Future Work (Do Not Implement Yet — Log Only)
 
 ### 1. Rewrite README (done 2026-04-06)

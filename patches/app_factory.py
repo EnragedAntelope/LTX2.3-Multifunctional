@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hmac
+import logging
 import os
 import sys
 import types
@@ -71,6 +72,8 @@ if TYPE_CHECKING:
 # SECURITY: Allows all origins for LAN access (http://{LAN_IP}:4000).
 # This app is designed for local/LAN use only. Restrict if deploying publicly.
 DEFAULT_ALLOWED_ORIGINS: list[str] = ["*"]
+
+logger = logging.getLogger("app_factory")
 
 
 def _ltx_desktop_config_dir() -> Path:
@@ -342,7 +345,7 @@ def create_app(
                             orig_running
                         )
             except Exception as e:
-                print(f"Force unload warning: {e}")
+                logger.warning("Force unload warning: %s", e)
 
             # 3. 深度清理
             gc.collect()
@@ -408,7 +411,7 @@ def create_app(
                         getattr(gen, attr).clear()
                     except Exception:
                         pass
-            print("[reset-state] Generation state has been reset cleanly.")
+            logger.info("[reset-state] Generation state has been reset cleanly.")
             return {"status": "success", "message": "Generation state reset"}
         except Exception as e:
             import traceback
@@ -450,7 +453,7 @@ def create_app(
             with open(settings_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"[seed-settings] Failed to persist: {e}")
+            logger.warning("[seed-settings] Failed to persist: %s", e)
 
         return {"status": "ok", "seed_locked": seed_locked, "locked_seed": locked_seed}
 
@@ -485,7 +488,7 @@ def create_app(
             with open(settings_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"[upscaler] Failed to persist: {e}")
+            logger.warning("[upscaler] Failed to persist: %s", e)
 
         # Also update in-memory settings if possible
         try:
@@ -587,7 +590,7 @@ def create_app(
                 "$owner.Size = New-Object System.Drawing.Size(1, 1);"
                 "$owner.Show();"
                 "$owner.BringToFront();"
-                "$owner.Focus();"
+                "$null = $owner.Focus();"
                 "if ($f.ShowDialog($owner) -eq 'OK') { echo $f.SelectedPath };"
                 "$owner.Dispose();"
             )
@@ -1179,7 +1182,7 @@ def create_app(
                         te_state.service, "device"
                     ):
                         te_state.service.device = new_device
-                        print(f"[TextEncoder] device updated to {new_device}")
+                        logger.info("[TextEncoder] device updated to %s", new_device)
 
                     # 4b. 将缓存的 encoder 权重迁移到 CPU，下次推理时再按新设备重加载
                     if (
@@ -1191,9 +1194,7 @@ def create_app(
                         except Exception:
                             pass
                         te_state.cached_encoder = None
-                        print(
-                            "[TextEncoder] cached encoder cleared (will reload on new GPU)"
-                        )
+                        logger.info("[TextEncoder] cached encoder cleared (will reload on new GPU)")
 
                     # 4c. 清除 API embeddings 缓存（tensor 绑定旧 GPU）
                     if hasattr(te_state, "api_embeddings"):
@@ -1202,19 +1203,17 @@ def create_app(
                     # 4d. 清除 prompt cache（其中 tensor 也绑定旧 GPU）
                     if hasattr(te_state, "prompt_cache") and te_state.prompt_cache:
                         te_state.prompt_cache.clear()
-                        print("[TextEncoder] prompt cache cleared")
+                        logger.info("[TextEncoder] prompt cache cleared")
             except Exception as _te_err:
-                print(f"[TextEncoder] device sync warning (non-fatal): {_te_err}")
+                logger.warning("[TextEncoder] device sync warning (non-fatal): %s", _te_err)
 
-            print(
-                f"Switched active GPU to: {torch.cuda.get_device_name(gpu_id)} (ID: {gpu_id})"
-            )
+            logger.info("Switched active GPU to: %s (ID: %d)", torch.cuda.get_device_name(gpu_id), gpu_id)
             return {"status": "success", "message": f"Switched to GPU {gpu_id}"}
         except Exception as e:
             return JSONResponse(status_code=500, content={"error": str(e)})
 
     # --- 核心增强：首尾帧插值与视频超分支持 ---
-    from handlers.video_generation_handler import VideoGenerationHandler
+    from handlers.video_generation_handler import VideoGenerationHandler, _read_custom_encoder_path
     from services.retake_pipeline.ltx_retake_pipeline import LTXRetakePipeline
     from server_utils.media_validation import normalize_optional_path
     from PIL import Image
@@ -1224,23 +1223,7 @@ def create_app(
     _orig_generate_video = VideoGenerationHandler.generate_video
 
     def patched_generate(self, req: GenerateVideoRequest):
-        # === [DEBUG] 打印当前生成状态 ===
-        gen = self._generation
-        is_running = (
-            gen.is_generation_running()
-            if hasattr(gen, "is_generation_running")
-            else "?method N/A"
-        )
-        gen_id = getattr(gen, "_generation_id", "?attr N/A")
-        is_gen = getattr(gen, "_is_generating", "?attr N/A")
-        cancelled = getattr(
-            gen, "_cancelled", getattr(gen, "_is_cancelled", "?attr N/A")
-        )
-        print(f"\n[PATCH][patched_generate] ==> New request received / 收到新请求")
-        print(f"  is_generation_running() = {is_running}")
-        print(f"  _generation_id          = {gen_id}")
-        print(f"  _is_generating          = {is_gen}")
-        print(f"  _cancelled              = {cancelled}")
+        logger.info("[PATCH] New generation request received")
         start_frame_path = normalize_optional_path(getattr(req, "startFramePath", None))
         end_frame_path = normalize_optional_path(getattr(req, "endFramePath", None))
         _raw_kf = getattr(req, "keyframePaths", None)
@@ -1266,21 +1249,16 @@ def create_app(
             except (TypeError, ValueError):
                 keyframe_times_list = None
         aspect_ratio = getattr(req, "aspectRatio", None)
-        print(f"  startFramePath          = {start_frame_path}")
-        print(f"  endFramePath            = {end_frame_path}")
-        print(f"  keyframePaths (n={len(keyframe_paths_list)}) = {use_multi_keyframes}")
-        print(f"  aspectRatio             = {aspect_ratio}")
+        logger.info(
+            "[PATCH] startFramePath=%s endFramePath=%s keyframes=%d aspectRatio=%s",
+            start_frame_path, end_frame_path, len(keyframe_paths_list), aspect_ratio,
+        )
 
         # 检查是否有音频
         audio_path = normalize_optional_path(getattr(req, "audioPath", None))
-        print(f"[PATCH] audio_path = {audio_path}")
 
         # 检查是否有图片（图生视频）
         image_path = normalize_optional_path(getattr(req, "imagePath", None))
-        print(f"[PATCH] image_path = {image_path}")
-
-        # 始终使用自定义逻辑（支持首尾帧和竖屏）/ Always use custom logic (supports start/end frames and portrait)
-        print(f"[PATCH] Using custom logic / 使用自定义逻辑处理")
 
         # 计算分辨率
         import uuid
@@ -1312,7 +1290,7 @@ def create_app(
         num_frames = ((duration * fps) // 8) * 8 + 1
         num_frames = max(num_frames, 9)
 
-        print(f"[PATCH] Computed resolution: {width}x{height}, frames: {num_frames}")
+        logger.info("[PATCH] Computed resolution: %dx%d, frames: %d", width, height, num_frames)
 
         # 多关键帧单次推理时勿用首尾帧属性，避免与 keyframe 列表重复
         if use_multi_keyframes:
@@ -1349,13 +1327,10 @@ def create_app(
                     keyframe_times_list if use_multi_keyframes else None
                 ),
             )
-            print(f"[PATCH][patched_generate] <== 完成, 返回状态: complete")
+            logger.info("[PATCH] Generation complete")
             return type("Response", (), {"status": "complete", "video_path": result})()
         except Exception as e:
-            import traceback
-
-            print(f"[PATCH][patched_generate] 错误: {e}")
-            traceback.print_exc()
+            logger.exception("[PATCH] Generation error: %s", e)
             raise
 
     def patched_generate_video(
@@ -1377,25 +1352,10 @@ def create_app(
         keyframe_strengths: list[float] | None = None,
         keyframe_times: list[float] | None = None,
     ):
-        # === [DEBUG] 打印当前生成状态 ===
-        gen = self._generation
-        is_running = (
-            gen.is_generation_running()
-            if hasattr(gen, "is_generation_running")
-            else "?method N/A"
+        logger.info(
+            "[PATCH] Starting inference: %dx%d, frames=%d, fps=%s, image_path=%s",
+            width, height, num_frames, fps, image_path,
         )
-        gen_id = getattr(gen, "_generation_id", "?attr N/A")
-        is_gen = getattr(gen, "_is_generating", "?attr N/A")
-        print(f"[PATCH][patched_generate_video] ==> Starting inference / 开始推理")
-        print(f"  is_generation_running() = {is_running}")
-        print(f"  _generation_id          = {gen_id}")
-        print(f"  _is_generating          = {is_gen}")
-        print(
-            f"  resolution              = {width}x{height}, frames={num_frames}, fps={fps}"
-        )
-        print(f"  image param             = {type(image)}, {image is not None}")
-        print(f"  image_path              = {image_path}")
-        # ==================================
         from ltx_pipelines.utils.args import (
             ImageConditioningInput as LtxImageConditioningInput,
         )
@@ -1407,22 +1367,21 @@ def create_app(
 
         start_path = getattr(self, "_start_frame_path", None)
         end_path = getattr(self, "_end_frame_path", None)
-        print(
-            f"[PATCH] start_path={start_path}, end_path={end_path}, multi_kf={use_multi_kf} n={len(kf_list)}"
+        logger.debug(
+            "[PATCH] start_path=%s end_path=%s multi_kf=%s n=%d",
+            start_path, end_path, use_multi_kf, len(kf_list),
         )
 
         latent_num_frames = (num_frames - 1) // 8 + 1
         last_latent_idx = latent_num_frames - 1
-        print(
-            f"[PATCH] latent_num_frames={latent_num_frames}, last_latent_idx={last_latent_idx}"
-        )
 
         if use_multi_kf:
             n_kf = len(kf_list)
             st_override = keyframe_strengths or []
             if len(st_override) not in (0, n_kf):
-                print(
-                    f"[PATCH] keyframeStrengths length ({len(st_override)}) doesn't match keyframe count ({n_kf}), using default strength curve / 改用默认强度曲线"
+                logger.warning(
+                    "[PATCH] keyframeStrengths length (%d) doesn't match keyframe count (%d), using default strength curve",
+                    len(st_override), n_kf,
                 )
                 st_override = []
 
@@ -1453,7 +1412,7 @@ def create_app(
                         fi_list[j] = min(last_latent_idx, fi_list[j - 1] + 1)
                 if n_kf > 1:
                     fi_list[-1] = last_latent_idx
-                print(f"[PATCH] Multi-keyframe: 使用 keyframeTimes 映射 -> {fi_list}")
+                logger.info("[PATCH] Multi-keyframe time mapping -> %s", fi_list)
             else:
                 fi_list = []
                 prev_fi = -1
@@ -1497,21 +1456,17 @@ def create_app(
                         path=tmp_normalized, frame_idx=int(fi), strength=float(st)
                     )
                 )
-                print(
-                    f"[PATCH] Multi-keyframe [{ki}]: {tmp_normalized}, "
-                    f"frame_idx={fi}, strength={st:.3f}"
+                logger.debug(
+                    "[PATCH] Multi-keyframe [%d]: %s frame_idx=%d strength=%.3f",
+                    ki, tmp_normalized, fi, st,
                 )
         else:
             # 如果没有首尾帧但有 image_path，使用 image_path 作为起始帧
             if not start_path and not end_path and image_path:
-                print(f"[PATCH] 使用 image_path 作为起始帧: {image_path}")
+                logger.debug("[PATCH] Using image_path as start frame: %s", image_path)
                 start_path = image_path
 
             has_image_param = image is not None
-            if has_image_param:
-                print(
-                    f"[PATCH] image param is available, will be used as start frame"
-                )
 
             target_start_path = start_path if start_path else None
             if not target_start_path and image is not None:
@@ -1519,9 +1474,7 @@ def create_app(
                 image.save(tmp)
                 temp_paths.append(tmp)
                 target_start_path = tmp
-                print(
-                    f"[PATCH] Using image param as start frame: {target_start_path}"
-                )
+                logger.debug("[PATCH] Using image param as start frame: %s", target_start_path)
 
             if target_start_path:
                 start_img = self._prepare_image(target_start_path, width, height)
@@ -1534,7 +1487,7 @@ def create_app(
                         path=tmp_normalized, frame_idx=0, strength=1.0
                     )
                 )
-                print(f"[PATCH] Added start frame: {tmp_normalized}, frame_idx=0")
+                logger.debug("[PATCH] Added start frame: %s frame_idx=0", tmp_normalized)
 
             if end_path:
                 end_img = self._prepare_image(end_path, width, height)
@@ -1549,18 +1502,9 @@ def create_app(
                         strength=1.0,
                     )
                 )
-                print(
-                    f"[PATCH] Added end frame: {tmp_normalized}, frame_idx={last_latent_idx}"
-                )
+                logger.debug("[PATCH] Added end frame: %s frame_idx=%d", tmp_normalized, last_latent_idx)
 
-        print(f"[PATCH] images_inputs count: {len(images_inputs)}")
-        if images_inputs:
-            for idx, img in enumerate(images_inputs):
-                print(
-                    f"[PATCH] images_inputs[{idx}]: path={getattr(img, 'path', 'N/A')}, frame_idx={getattr(img, 'frame_idx', 'N/A')}, strength={getattr(img, 'strength', 'N/A')}"
-                )
-
-        print(f"[PATCH] audio_path = {audio_path}")
+        logger.info("[PATCH] images_inputs count: %d", len(images_inputs))
 
         if self._generation.is_generation_cancelled():
             raise RuntimeError("Generation was cancelled")
@@ -1586,16 +1530,14 @@ def create_app(
         ):
             from keep_models_runtime import force_unload_gpu_pipeline
 
-            print(
-                f"[PATCH] 管线类型切换 {cached_sig[0]} -> {new_kind}，强制卸载旧模型"
-            )
+            logger.info("[PATCH] Pipeline type switch %s -> %s, unloading old model", cached_sig[0], new_kind)
             force_unload_gpu_pipeline(self._pipelines)
             gpu_slot = getattr(self._pipelines.state, "gpu_slot", None)
             active = getattr(gpu_slot, "active_pipeline", None) if gpu_slot else None
 
         if audio_path:
             desired_sig = ("a2v",)
-            print(f"[PATCH] 加载 A2V pipeline（支持音频）")
+            logger.info("[PATCH] Loading A2V pipeline")
             pipeline_state = self._pipelines.load_a2v_pipeline()
             self._pipelines._pipeline_signature = desired_sig
             num_inference_steps = 11
@@ -1616,13 +1558,11 @@ def create_app(
                                 sd_ops=LTXV_LORA_COMFY_RENAMING_MAP,
                             )
                         ]
-                        print(
-                            f"[PATCH] LoRA ready / 已就绪: {lora_str}, strength={lora_strength}"
-                        )
+                        logger.info("[PATCH] LoRA ready: %s strength=%s", lora_str, lora_strength)
                     else:
-                        print(f"[PATCH] LoRA file not found, using no-LoRA fast pipeline / 文件不存在: {lora_str}")
+                        logger.warning("[PATCH] LoRA file not found, using no-LoRA pipeline: %s", lora_str)
                 except Exception as _lora_err:
-                    print(f"[PATCH] LoRA load failed, falling back to no-LoRA / 准备失败: {_lora_err}")
+                    logger.warning("[PATCH] LoRA load failed, falling back to no-LoRA: %s", _lora_err)
                     loras = None
 
             if loras is not None:
@@ -1634,43 +1574,67 @@ def create_app(
             desired_sig = ("fast", lora_key, lora_st)
 
             if loras is not None:
-                print("[PATCH] Building Fast pipeline with LoRA (rebuilt after unload) / 构建带 LoRA 的 Fast pipeline")
-                # 首次 LoRA 构建时可能触发额外的显存峰值（编译/缓存/权重搬运）。
-                # 通过一次无 LoRA 的 fast pipeline warmup 来降低后续 LoRA 构建的峰值风险。
-                if not getattr(self, "_ltx_lora_warmup_done", False):
-                    try:
-                        print("[PATCH] LoRA warmup: loading no-LoRA fast pipeline to prime cache / 先加载无 LoRA fast pipeline 触发缓存")
-                        # should_warm=True：尽量触发内核/权重缓存（若实现不同则静默失败也可回退）
-                        self._pipelines.load_gpu_pipeline("fast", should_warm=True)
-                        from keep_models_runtime import force_unload_gpu_pipeline
-                        force_unload_gpu_pipeline(self._pipelines)
-                        import gc
-                        gc.collect()
-                        try:
-                            import torch
-                            if torch.cuda.is_available():
-                                torch.cuda.empty_cache()
-                                torch.cuda.ipc_collect()
-                        except Exception:
-                            pass
-                        self._ltx_lora_warmup_done = True
-                    except Exception as _warm_err:
-                        print(f"[PATCH] LoRA warmup failed (ignore): {_warm_err}")
-                from keep_models_runtime import force_unload_gpu_pipeline
+                logger.info("[PATCH] Building Fast pipeline with LoRA")
 
+                # Warmup: load the no-LoRA pipeline once to prime CUDA kernel/weight caches
+                # before the LoRA-injected build, reducing peak-VRAM risk on first use.
+                # Skip on high-VRAM systems (>= 16 GB) — cache priming adds ~45 s with no benefit.
+                if not getattr(self, "_ltx_lora_warmup_done", False):
+                    _vram_gb = 0.0
+                    try:
+                        if torch.cuda.is_available():
+                            _vram_gb = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / 1024 ** 3
+                    except Exception:
+                        pass
+                    if _vram_gb >= 16.0:
+                        logger.info("[PATCH] LoRA warmup skipped (%.0f GB VRAM >= 16 GB threshold)", _vram_gb)
+                        self._ltx_lora_warmup_done = True
+                    else:
+                        try:
+                            logger.info("[PATCH] LoRA warmup: priming cache on %.0f GB VRAM system", _vram_gb)
+                            self._pipelines.load_gpu_pipeline("fast", should_warm=True)
+                            from keep_models_runtime import force_unload_gpu_pipeline
+                            force_unload_gpu_pipeline(self._pipelines)
+                            # Clean up the warmup video that should_warm=True generates in outputs dir
+                            try:
+                                _outputs_dir = getattr(self.config, "outputs_dir", None)
+                                if _outputs_dir:
+                                    _warmup_file = Path(_outputs_dir) / "_warmup_fast.mp4"
+                                    if _warmup_file.exists():
+                                        _warmup_file.unlink()
+                                        logger.debug("[PATCH] Deleted warmup file: %s", _warmup_file)
+                            except Exception:
+                                pass
+                            import gc
+                            gc.collect()
+                            try:
+                                if torch.cuda.is_available():
+                                    torch.cuda.empty_cache()
+                                    torch.cuda.ipc_collect()
+                            except Exception:
+                                pass
+                            self._ltx_lora_warmup_done = True
+                        except Exception as _warm_err:
+                            logger.warning("[PATCH] LoRA warmup failed (non-fatal): %s", _warm_err)
+
+                # Unload whatever pipeline is currently in VRAM before building the LoRA one.
+                # On first LoRA request after warmup this is a no-op; on subsequent requests it
+                # releases the previous pipeline so the new LoRA weights fit cleanly.
+                from keep_models_runtime import force_unload_gpu_pipeline
                 force_unload_gpu_pipeline(self._pipelines)
                 import gc
-
                 gc.collect()
-                # 防止旧分配/碎片在首次 LoRA 构建时叠加导致 OOM
                 try:
-                    import torch
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
                         torch.cuda.ipc_collect()
                 except Exception:
                     pass
                 gemma_root = self._pipelines._text_handler.resolve_gemma_root()
+                _custom_enc = _read_custom_encoder_path()
+                if _custom_enc:
+                    logger.info("[PATCH] Custom text encoder override (LoRA path): %s", _custom_enc)
+                    gemma_root = _custom_enc
                 from runtime_config.model_download_specs import resolve_model_path
                 from services.fast_video_pipeline.ltx_fast_video_pipeline import (
                     LTXFastVideoPipeline,
@@ -1726,19 +1690,36 @@ def create_app(
                 )
                 _ml = getattr(getattr(ltx_pipe, "pipeline", None), "model_ledger", None)
                 _ml_loras = getattr(_ml, "loras", None) if _ml else None
-                print(
-                    f"[PATCH] LoRA init: extra_kw={list(lora_kw.keys())}, "
-                    f"injection_points={n_inj}, model_ledger.loras={_ml_loras}"
+                logger.info(
+                    "[PATCH] LoRA init: extra_kw=%s injection_points=%d model_ledger.loras=%s",
+                    list(lora_kw.keys()), n_inj, _ml_loras,
                 )
                 if getattr(self._pipelines, "low_vram_mode", False):
                     from low_vram_runtime import try_sequential_offload_on_pipeline_state
 
                     try_sequential_offload_on_pipeline_state(pipeline_state)
             else:
-                print(f"[PATCH] Loading Fast pipeline (no LoRA) / 加载 Fast pipeline（无 LoRA）")
-                pipeline_state = self._pipelines.load_gpu_pipeline(
-                    "fast", should_warm=False
-                )
+                _custom_enc = _read_custom_encoder_path()
+                if _custom_enc:
+                    # Build manually so we can apply the custom gemma root — load_gpu_pipeline
+                    # uses TextHandler.resolve_gemma_root() internally and can't be overridden.
+                    logger.info("[PATCH] Custom text encoder override (no-LoRA path): %s", _custom_enc)
+                    from keep_models_runtime import force_unload_gpu_pipeline
+                    force_unload_gpu_pipeline(self._pipelines)
+                    from runtime_config.model_download_specs import resolve_model_path
+                    from services.fast_video_pipeline.ltx_fast_video_pipeline import LTXFastVideoPipeline
+                    from state.app_state_types import GpuSlot, VideoPipelineState, VideoPipelineWarmth
+                    checkpoint_path = str(resolve_model_path(self._pipelines.models_dir, self._pipelines.config.model_download_specs, "checkpoint"))
+                    upsampler_path = str(resolve_model_path(self._pipelines.models_dir, self._pipelines.config.model_download_specs, "upsampler"))
+                    ltx_pipe = LTXFastVideoPipeline(checkpoint_path, _custom_enc, upsampler_path, self._pipelines.config.device)
+                    pipeline_state = VideoPipelineState(pipeline=ltx_pipe, warmth=VideoPipelineWarmth.COLD, is_compiled=False)
+                    self._pipelines.state.gpu_slot = GpuSlot(active_pipeline=pipeline_state)
+                    if getattr(self._pipelines, "low_vram_mode", False):
+                        from low_vram_runtime import try_sequential_offload_on_pipeline_state
+                        try_sequential_offload_on_pipeline_state(pipeline_state)
+                else:
+                    logger.info("[PATCH] Loading Fast pipeline (no LoRA)")
+                    pipeline_state = self._pipelines.load_gpu_pipeline("fast", should_warm=False)
             self._pipelines._pipeline_signature = desired_sig
             num_inference_steps = None
             extra_loras_for_hook = tuple(loras) if loras else None
@@ -1853,9 +1834,7 @@ def create_app(
         fps, num_frames, src_w, src_h = _orig_get_meta(video_path)
 
         if is_upscale:
-            print(
-                f">>> 启动超分内核: {src_w}x{src_h} -> {target_w}x{target_h} (强度: {target_strength})"
-            )
+            logger.info(">>> Upscale: %dx%d -> %dx%d (strength: %s)", src_w, src_h, target_w, target_h, target_strength)
 
             # 1. 注入分辨率
             def get_meta_patched(path):
@@ -1883,9 +1862,7 @@ def create_app(
                         break
                 skip_idx = min(skip_idx, full_len - 2)
                 new_sigmas = sigmas[skip_idx:]
-                print(
-                    f">>> 采样拦截成功: 原步数 {full_len}, 现步数 {len(new_sigmas)}, 起始强度 {new_sigmas[0].item():.2f}"
-                )
+                logger.debug(">>> Sampler intercept: %d steps -> %d, start strength %.2f", full_len, len(new_sigmas), new_sigmas[0].item())
                 return _orig_euler_loop(
                     new_sigmas, video_state, audio_state, stepper, denoise_fn
                 )
@@ -1967,9 +1944,7 @@ def create_app(
                 else:
                     adjusted_frames = up_frames
 
-                print(
-                    f">>> 帧数调整: {num_frames} -> {adjusted_frames} (符合 8k+1 规则)"
-                )
+                logger.info(">>> Frame count adjustment: %d -> %d (8k+1 rule)", num_frames, adjusted_frames)
 
                 # 调整视频帧数 - 截断多余的帧或填充黑帧
                 adjusted_video_path = None
@@ -1996,9 +1971,7 @@ def create_app(
                     if adjusted_frames < original_frame_count:
                         # 截断多余的帧
                         frames = frames[:adjusted_frames]
-                        print(
-                            f">>> 已截断视频: {original_frame_count} -> {len(frames)} 帧"
-                        )
+                        logger.info(">>> Trimmed video: %d -> %d frames", original_frame_count, len(frames))
                     else:
                         # 填充黑帧 (复制最后一帧)
                         last_frame = frames[-1] if frames else None
@@ -2007,9 +1980,7 @@ def create_app(
                             black_frame = np.zeros((h, w, 3), dtype=np.uint8)
                             while len(frames) < adjusted_frames:
                                 frames.append(black_frame.copy())
-                        print(
-                            f">>> 已填充视频: {original_frame_count} -> {len(frames)} 帧"
-                        )
+                        logger.info(">>> Padded video: %d -> %d frames", original_frame_count, len(frames))
 
                     # 保存调整后的视频到临时文件
                     adjusted_video_fd = tempfile.NamedTemporaryFile(
@@ -2031,9 +2002,7 @@ def create_app(
 
                     video_path = adjusted_video_path
                     num_frames = adjusted_frames
-                    print(
-                        f">>> 视频帧数调整完成: {original_frame_count} -> {num_frames}"
-                    )
+                    logger.info(">>> Frame adjustment done: %d -> %d", original_frame_count, num_frames)
 
                 except ImportError:
                     # cv2不可用，尝试使用LTX内置方法
@@ -2064,12 +2033,10 @@ def create_app(
                         write_video_stream(adjusted_video_path, frames, fps)
                         video_path = adjusted_video_path
                         num_frames = adjusted_frames
-                        print(
-                            f">>> 视频帧数调整完成: {original_frame_count} -> {num_frames}"
-                        )
+                        logger.info(">>> Frame adjustment done: %d -> %d", original_frame_count, num_frames)
 
                     except Exception as e2:
-                        print(f">>> 视频帧数自动调整失败: {e2}")
+                        logger.error(">>> Frame adjustment failed: %s", e2)
                         return JSONResponse(
                             status_code=400,
                             content={
@@ -2077,7 +2044,7 @@ def create_app(
                             },
                         )
                 except Exception as e:
-                    print(f">>> 视频帧数自动调整失败: {e}")
+                    logger.error(">>> Frame adjustment failed: %s", e)
                     return JSONResponse(
                         status_code=400,
                         content={
@@ -2206,7 +2173,7 @@ def create_app(
             import traceback
 
             error_msg = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
-            print(f"Upload error: {error_msg}")
+            logger.error("Upload error: %s", error_msg)
             return JSONResponse(
                 status_code=500, content={"error": str(e), "detail": error_msg}
             )
@@ -2229,7 +2196,7 @@ def create_app(
         for env_key in ("LTX_FFMPEG_PATH", "FFMPEG_PATH"):
             hit = _ok(os.environ.get(env_key))
             if hit:
-                print(f"[batch-merge] ffmpeg from {env_key}: {hit}")
+                logger.debug("[batch-merge] ffmpeg from %s: %s", env_key, hit)
                 return hit
 
         try:
@@ -2238,10 +2205,10 @@ def create_app(
                 line = pref.read_text(encoding="utf-8").splitlines()[0].strip()
                 hit = _ok(line)
                 if hit:
-                    print(f"[batch-merge] ffmpeg from ffmpeg_path.txt: {hit}")
+                    logger.debug("[batch-merge] ffmpeg from ffmpeg_path.txt: %s", hit)
                     return hit
         except Exception as _e:
-            print(f"[batch-merge] ffmpeg_path.txt: {_e!r}")
+            logger.debug("[batch-merge] ffmpeg_path.txt: %r", _e)
 
         # imageio-ffmpeg：多数视频/ML 环境会带上独立 ffmpeg 可执行文件
         try:
@@ -2249,15 +2216,15 @@ def create_app(
 
             hit = _ok(imageio_ffmpeg.get_ffmpeg_exe())
             if hit:
-                print(f"[batch-merge] ffmpeg from imageio_ffmpeg: {hit}")
+                logger.debug("[batch-merge] ffmpeg from imageio_ffmpeg: %s", hit)
                 return hit
         except Exception as _e:
-            print(f"[batch-merge] imageio_ffmpeg: {_e!r}")
+            logger.debug("[batch-merge] imageio_ffmpeg: %r", _e)
 
         for name in ("ffmpeg", "ffmpeg.exe"):
             hit = _ok(shutil.which(name))
             if hit:
-                print(f"[batch-merge] ffmpeg from PATH which({name}): {hit}")
+                logger.debug("[batch-merge] ffmpeg from PATH which(%s): %s", name, hit)
                 return hit
 
         # 显式遍历 PATH 中的目录（某些环境下 which 不可靠）
@@ -2269,7 +2236,7 @@ def create_app(
             for exe in ("ffmpeg.exe", "ffmpeg"):
                 hit = _ok(os.path.join(folder, exe))
                 if hit:
-                    print(f"[batch-merge] ffmpeg from PATH scan: {hit}")
+                    logger.debug("[batch-merge] ffmpeg from PATH scan: %s", hit)
                     return hit
 
         localappdata = os.environ.get("LOCALAPPDATA", "") or ""
@@ -2292,7 +2259,7 @@ def create_app(
         for c in static_candidates:
             hit = _ok(c)
             if hit:
-                print(f"[batch-merge] ffmpeg static candidate: {hit}")
+                logger.debug("[batch-merge] ffmpeg static candidate: %s", hit)
                 return hit
 
         # WinGet 安装的 Gyan / BtbN 等包：在 Packages 下搜索 ffmpeg.exe（限制深度避免过慢）
@@ -2303,16 +2270,16 @@ def create_app(
                     if "ffmpeg.exe" in files:
                         hit = _ok(os.path.join(root, "ffmpeg.exe"))
                         if hit:
-                            print(f"[batch-merge] ffmpeg from WinGet tree: {hit}")
+                            logger.debug("[batch-merge] ffmpeg from WinGet tree: %s", hit)
                             return hit
                     # 略过过深目录
                     depth = root[len(wg) :].count(os.sep)
                     if depth > 6:
                         _dirs[:] = []
         except Exception as _e:
-            print(f"[batch-merge] WinGet scan: {_e!r}")
+            logger.debug("[batch-merge] WinGet scan: %r", _e)
 
-        print("[batch-merge] ffmpeg not found after extended search")
+        logger.warning("[batch-merge] ffmpeg not found after extended search")
         return None
 
     def _ffmpeg_concat_copy(
