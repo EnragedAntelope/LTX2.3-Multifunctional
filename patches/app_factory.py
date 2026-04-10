@@ -110,7 +110,13 @@ def _make_gemma_fp8_ops():
             ):
                 bytes_saved += submod.weight.numel()
                 submod.weight.data = submod.weight.data.to(torch.float8_e4m3fn)
-                submod.__class__ = Fp8CastLinear
+                try:
+                    from ltx_core.quantization.fp8_cast import _replace_fwd_with_upcast
+                    _replace_fwd_with_upcast(submod, with_stochastic_rounding=False, seed=0)
+                except ImportError:
+                    submod.__class__ = Fp8CastLinear
+                    submod._with_stochastic_rounding = False
+                    submod._seed = 0
                 cast_count += 1
         if cast_count:
             logger.info(
