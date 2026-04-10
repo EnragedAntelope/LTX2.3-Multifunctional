@@ -76,6 +76,20 @@ DEFAULT_ALLOWED_ORIGINS: list[str] = ["*"]
 logger = logging.getLogger("app_factory")
 
 
+def _read_custom_encoder_path() -> str | None:
+    """Return user-specified Gemma encoder directory override, or None to use default.
+    Reads custom_text_encoder_path from LTXDesktop settings.json.
+    """
+    cfg = Path(os.environ.get("LOCALAPPDATA", "")) / "LTXDesktop" / "settings.json"
+    try:
+        import json as _json
+        data = _json.loads(cfg.read_text(encoding="utf-8"))
+        p = data.get("custom_text_encoder_path", "").strip()
+        return p if p else None
+    except Exception:
+        return None
+
+
 def _ltx_desktop_config_dir() -> Path:
     p = (
         Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local")))
@@ -1213,7 +1227,7 @@ def create_app(
             return JSONResponse(status_code=500, content={"error": str(e)})
 
     # --- 核心增强：首尾帧插值与视频超分支持 ---
-    from handlers.video_generation_handler import VideoGenerationHandler, _read_custom_encoder_path
+    from handlers.video_generation_handler import VideoGenerationHandler
     from services.retake_pipeline.ltx_retake_pipeline import LTXRetakePipeline
     from server_utils.media_validation import normalize_optional_path
     from PIL import Image
