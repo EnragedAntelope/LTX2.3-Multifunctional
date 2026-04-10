@@ -285,24 +285,12 @@
             logCancelFailed: '取消请求失败',
             // --- Image count ---
             numImagesLabel: '生成数量',
-            // --- Custom encoder ---
-            customEncoderLabel: '自定义编码器目录（可选）',
-            customEncoderPh: '例如: F:\\models\\my-gemma',
-            customEncoderSaved: '编码器目录已保存',
-            customEncoderNote: '覆盖默认 Gemma 目录。必须是模型文件夹，不是单个文件。',
-            logCustomEncoderSaved: '自定义编码器目录已保存',
-            // --- Gemma fp8 ---
-            gemmaFp8Label: 'Gemma 编码器 fp8（节省约 12 GB 显存）',
-            gemmaFp8Desc: '将 Gemma 文本编码器权重量化为 fp8，减半显存占用。下次生成时生效。',
-            logGemmaFp8Saved: 'Gemma fp8 设置已保存',
             // --- Render queue ---
             addToQueue: '加入队列',
             queueLabel: '渲染队列',
             queueClear: '清空队列',
             logQueued: '已加入队列',
             logQueueNext: '开始执行队列中下一个任务',
-            browse: '浏览',
-            save: '保存',
         },
         en: {
             tabVideo: 'Video',
@@ -584,24 +572,12 @@
             logCancelFailed: 'Cancel request failed',
             // --- Image count ---
             numImagesLabel: 'Count',
-            // --- Custom encoder ---
-            customEncoderLabel: 'Custom encoder directory (optional)',
-            customEncoderPh: 'e.g. F:\\models\\my-gemma',
-            customEncoderSaved: 'Encoder directory saved',
-            customEncoderNote: 'Overrides default Gemma folder. Must be a model directory, not a single file.',
-            logCustomEncoderSaved: 'Custom encoder directory saved',
-            // --- Gemma fp8 ---
-            gemmaFp8Label: 'Gemma encoder fp8 (saves ~12 GB VRAM)',
-            gemmaFp8Desc: 'Quantizes Gemma text encoder weights to fp8. Halves encoder VRAM usage. Takes effect on next generation.',
-            logGemmaFp8Saved: 'Gemma fp8 setting saved',
             // --- Render queue ---
             addToQueue: 'Add to Queue',
             queueLabel: 'Render Queue',
             queueClear: 'Clear Queue',
             logQueued: 'Added to queue',
             logQueueNext: 'Starting next queued job',
-            browse: 'Browse',
-            save: 'Save',
         },
     };
 

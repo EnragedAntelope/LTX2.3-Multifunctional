@@ -12,10 +12,8 @@ because the monkey-patches never delegate to them.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING
 
@@ -38,20 +36,6 @@ if TYPE_CHECKING:
     from runtime_config.runtime_config import RuntimeConfig
 
 logger = logging.getLogger(__name__)
-
-
-def _read_custom_encoder_path() -> str | None:
-    """Return user-specified Gemma encoder directory override, or None to use default.
-    Read from custom_text_encoder_path in LTXDesktop settings.json.
-    / 从 settings.json 读取用户自定义 Gemma 编码器目录，未设置则返回 None。
-    """
-    cfg = Path(os.environ.get("LOCALAPPDATA", "")) / "LTXDesktop" / "settings.json"
-    try:
-        data = json.loads(cfg.read_text(encoding="utf-8"))
-        p = data.get("custom_text_encoder_path", "").strip()
-        return p if p else None
-    except Exception:
-        return None
 
 
 class VideoGenerationHandler(StateHandlerBase):

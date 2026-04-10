@@ -91,8 +91,6 @@ These are the official backend routers imported by our patched `app_factory.py`:
 | `/api/system/seed-settings` | GET/POST | Read/write seed lock state and locked seed value |
 | `/api/system/upscaler` | GET/POST | Toggle built-in upscaler on/off |
 | `/api/vram-limit` | GET/POST | Read/write user-configured VRAM cap (GB) stored in settings.json |
-| `/api/text-encoder-path` | GET/POST | Read/write custom Gemma encoder directory path stored in settings.json |
-| `/api/system/gemma-fp8` | GET/POST | Read/write Gemma fp8 quantization toggle (`gemma_fp8_enabled` in settings.json) |
 
 ### Backend Model Types (from `api_types.py`)
 
@@ -204,31 +202,19 @@ Audited all official LTX Desktop backend routes and settings against our UI. Cha
 - **`UI/index.html`** — Added "Add to Queue" button below the main Render button, and a collapsible queue panel showing pending jobs with a Clear Queue button.
 - **`UI/i18n.js`** — Added `addToQueue`, `queueLabel`, `queueClear`, `logQueued`, `logQueueNext` in both zh and en.
 
-**Custom Text Encoder Directory:**
-- **`patches/handlers/video_generation_handler.py`** — Added `_read_custom_encoder_path()` helper that reads `custom_text_encoder_path` from settings.json. Added override at both `gemma_root` call sites (lines ~216 and ~303 after shift). The override is logged at INFO level.
-- **`patches/app_factory.py`** — Added `GET /api/text-encoder-path` and `POST /api/text-encoder-path` endpoints (persist to settings.json).
-- **`UI/index.html`** — Added directory input + Browse + Save buttons below the local encoder toggle.
-- **`UI/index.js`** — Added `initCustomEncoderPath()` (loads saved path on startup) and DOMContentLoaded wiring for Browse/Save buttons.
-- **`UI/i18n.js`** — Added `customEncoderLabel`, `customEncoderPh`, `customEncoderSaved`, `customEncoderNote`, `logCustomEncoderSaved`, `browse`, `save` in both zh and en.
-- **Note**: The "text encoder" is a Gemma model **folder** (~25 GB), not a single file. UI copy makes this clear.
+**Custom Text Encoder Directory — attempted, then reverted (see Future Work §3):**
+Feature was implemented and wired end-to-end but removed after testing showed that alternative Gemma models (tested: `gemma-3-12b-it-heretic-v2`) are incompatible with the LTX backend's tokenizer loader. The backend's `module_ops_from_gemma_root` searches for `tokenizer.model` (SentencePiece binary), which HuggingFace-format fine-tunes typically omit. Copying the file from the official encoder didn't resolve deeper weight-loading errors. Feature removed until LTX Desktop exposes a supported path for custom encoders.
 
 **Version Pinning:**
 - **`README.md`** — Changed download link to specific v1.0.4 GitHub release. Added version-lock notice.
 - **`CLAUDE.md`** — Updated version check instructions to use `https://github.com/Lightricks/LTX-Desktop/releases` and `BACKEND_DIR/pyproject.toml` version field. Documents backend `1.0.0` = LTX Desktop `1.0.4`.
 - **`main.py`** — Added `_check_ltx_version()` that reads `pyproject.toml` and prints a prominent warning if the installed backend version doesn't match `1.0.0`. Uses `tomllib` (stdlib in Python 3.11+) or `tomli`; skips silently if neither is available.
 
-### Gemma fp8 quantization (done 2026-04-10)
+### Gemma fp8 quantization — attempted, then reverted (done 2026-04-10)
 
-Added optional fp8 quantization for the Gemma text encoder, halving its VRAM footprint (~24 GB → ~12 GB for Gemma 12B in bfloat16 → fp8).
+Implemented fp8 quantization for the Gemma text encoder via `ModuleOps` post-load cast, then removed when the custom encoder directory feature it depended on was also removed (see above and Future Work §3).
 
-**How it works**: The Gemma encoder is NOT loaded via `from_pretrained` — it uses a custom `Builder` pattern with `SafetensorsModelStateDictLoader`. `device_map` is therefore inapplicable. `bitsandbytes` is also inapplicable for the same reason. The correct mechanism is `ModuleOps`, which the builder applies post-load. We add a custom `ModuleOps` that iterates all `nn.Linear` layers, casts their weights to `torch.float8_e4m3fn`, and replaces their `forward` with `Fp8CastLinear.forward` (from `ltx_core.quantization.fp8_cast`) which upcasts weights back to input dtype at inference time. This is the same naive fp8 approach used by LTX for the DiT, but adapted for the Gemma encoder.
-
-**Patch ordering**: `ltx_text_encoder.py` patches `PromptEncoder.__init__` lazily (at first pipeline build). Our wrapper is installed via `_ensure_gemma_fp8_encoder_patch()` called at the start of `patched_generate_video`, which runs after the ltx_text_encoder patch. The global flag `_gemma_fp8_patch_installed` prevents double-installation.
-
-- **`patches/app_factory.py`** — Added `_is_gemma_fp8_enabled()`, `_make_gemma_fp8_ops()`, `_ensure_gemma_fp8_encoder_patch()`, and `GET/POST /api/system/gemma-fp8` endpoints. Added `import json` at module level.
-- **`UI/index.html`** — Checkbox below custom encoder note in settings panel.
-- **`UI/index.js`** — `initGemmaFp8()`: loads persisted state from backend with localStorage fast-path; saves on toggle change.
-- **`UI/i18n.js`** — Added `gemmaFp8Label`, `gemmaFp8Desc`, `logGemmaFp8Saved` in both zh and en.
+**Architecture notes (for when this is re-attempted)**: The Gemma encoder uses a custom `Builder`/`SafetensorsModelStateDictLoader` pattern — `device_map` and `bitsandbytes` are inapplicable. The correct mechanism is `ModuleOps` (a `NamedTuple(name, matcher, mutator)` applied post-load by the builder). Cast all `nn.Linear.weight` tensors to `torch.float8_e4m3fn` and replace `__class__` with `Fp8CastLinear` from `ltx_core.quantization.fp8_cast`. Patch ordering: install the fp8 wrapper after `ltx_text_encoder` has installed its own `PromptEncoder.__init__` patch.
 
 ### Code quality cleanup (done 2026-04-09)
 
@@ -255,7 +241,22 @@ These backend features still lack UI exposure:
 - **Torch compile**: `use_torch_compile` exists in settings but isn't exposed.
 - **Prompt cache size**: `prompt_cache_size` in settings, not exposed.
 
-### 3. Local Text Encoder Selection
+### 3. Custom Text Encoder Directory + fp8 Quantization
+
+Both features were implemented and then removed (2026-04-10) because alternative Gemma models are incompatible with the LTX backend's tokenizer loader (`module_ops_from_gemma_root` requires `tokenizer.model`, a SentencePiece binary that HuggingFace fine-tunes typically omit). Even after copying the tokenizer file, deeper weight-loading errors occurred.
+
+**Recheck conditions** — at each new LTX Desktop release, look for:
+- `model_download_specs.py`: does `"text_encoder"` support multiple specs or a user-supplied path?
+- `text_handler.py` → `resolve_gemma_root()`: does it accept an external path parameter?
+- `base_encoder.py` → `module_ops_from_gemma_root()`: does it gain HuggingFace tokenizer support (falling back to `tokenizer.json` if `tokenizer.model` absent)?
+- `app_settings.py`: new fields like `text_encoder_path` or `text_encoder_model`?
+
+If the backend adds an official path for custom encoder directories, re-expose:
+1. Custom encoder directory input (Browse/Save) in the Settings panel
+2. `GET/POST /api/text-encoder-path` endpoints in `app_factory.py`
+3. fp8 quantization toggle (checkbox) — once the custom encoder path works, apply fp8 via `ModuleOps` as documented in the "Gemma fp8 quantization" completed-work section above.
+
+### 4. Local Text Encoder Selection
 Currently the backend hardcodes one local text encoder: `gemma-3-12b-it-qat-q4_0-unquantized` (defined in `model_download_specs.py`, `"text_encoder"` key). The UI toggle is binary: local Gemma vs LTX API. The backend decision lives in `TextHandler.should_use_local_encoding()` (`text_handler.py`) — the `use_local_text_encoder` setting is **only a tiebreaker** when both API key and local encoder are present; if only one is available, the setting is ignored.
 
 **At each new LTX Desktop release, check for these signals that encoder selection is now possible:**

@@ -326,103 +326,6 @@
         }
     };
 
-    // Custom text encoder directory — persisted to backend settings.json; localStorage fallback for display
-    async function initCustomEncoderPath() {
-        const input = document.getElementById('custom-encoder-path');
-        if (!input) return;
-        // Show last-saved value immediately from localStorage
-        const cached = localStorage.getItem('setting_custom_encoder_path');
-        if (cached) input.value = cached;
-        // Sync from backend and update cache
-        try {
-            const res = await fetch(`${BASE}/api/text-encoder-path`);
-            const data = await res.json();
-            if (data.customEncoderPath) {
-                input.value = data.customEncoderPath;
-                localStorage.setItem('setting_custom_encoder_path', data.customEncoderPath);
-            } else if (data.customEncoderPath === '') {
-                // Explicitly cleared on backend — clear the cached display too
-                localStorage.removeItem('setting_custom_encoder_path');
-                if (!cached) input.value = '';
-            }
-        } catch (e) { /* backend not ready yet; cached value already shown */ }
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        const browseBtn = document.getElementById('browse-encoder-btn');
-        if (browseBtn) {
-            browseBtn.addEventListener('click', async () => {
-                try {
-                    // Pass a meaningful dialog title / 传递有意义的对话框标题
-                    const res = await fetch(`${BASE}/api/system/browse-dir?description=Select+Gemma+encoder+folder`);
-                    const data = await res.json();
-                    if (data.directory) {  // endpoint returns 'directory', not 'path'
-                        const input = document.getElementById('custom-encoder-path');
-                        if (input) input.value = data.directory;
-                    }
-                } catch (e) { /* ignore */ }
-            });
-        }
-        const saveBtn = document.getElementById('save-encoder-path-btn');
-        if (saveBtn) {
-            saveBtn.addEventListener('click', async () => {
-                const input = document.getElementById('custom-encoder-path');
-                const val = input ? input.value.trim() : '';
-                try {
-                    const res = await fetch(`${BASE}/api/text-encoder-path`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ customEncoderPath: val })
-                    });
-                    const data = await res.json();
-                    if (data.status === 'ok') {
-                        if (val) {
-                            localStorage.setItem('setting_custom_encoder_path', val);
-                        } else {
-                            localStorage.removeItem('setting_custom_encoder_path');
-                        }
-                        addLog(`✅ ${_t('logCustomEncoderSaved')}` + (val ? `: ${val}` : ' (cleared)'));
-                    }
-                } catch (e) {
-                    addLog(`❌ ${e.message}`);
-                }
-            });
-        }
-    });
-
-    // Gemma fp8 quantization toggle — persisted to backend settings.json
-    async function initGemmaFp8() {
-        const toggle = document.getElementById('gemma-fp8-toggle');
-        if (!toggle) return;
-        // Show cached state immediately
-        const cached = localStorage.getItem('setting_gemma_fp8');
-        if (cached !== null) toggle.checked = cached === 'true';
-        // Sync from backend
-        try {
-            const res = await fetch(`${BASE}/api/system/gemma-fp8`);
-            const data = await res.json();
-            toggle.checked = !!data.enabled;
-            localStorage.setItem('setting_gemma_fp8', String(!!data.enabled));
-        } catch (e) { /* backend not ready yet */ }
-
-        toggle.addEventListener('change', async () => {
-            const enabled = toggle.checked;
-            try {
-                const res = await fetch(`${BASE}/api/system/gemma-fp8`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ enabled }),
-                });
-                const data = await res.json();
-                if (data.status === 'ok') {
-                    localStorage.setItem('setting_gemma_fp8', String(enabled));
-                    addLog(`✅ ${_t('logGemmaFp8Saved')} (${enabled ? 'ON' : 'OFF'})`);
-                }
-            } catch (e) {
-                addLog(`❌ ${e.message}`);
-            }
-        });
-    }
 
     // LM Studio model list fetch — proxied through backend to avoid browser CORS/mixed-content issues
     async function fetchLmStudioModels() {
@@ -726,8 +629,6 @@
             initSeedControl();
             initUpscalerToggle();
             initVramLimit();
-            initCustomEncoderPath();
-            initGemmaFp8();
 
             // ── Restore & wire ALL persistent UI state ──────────────────────
 

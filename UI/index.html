@@ -116,20 +116,6 @@
             </div>
             <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 8px;" data-i18n="textEncoderToggleDesc">When off, uses API encoding (requires Gemini API Key)</div>
 
-            <label style="font-size: 10px; margin-bottom: 4px; color: var(--text-dim);" data-i18n="customEncoderLabel">Custom encoder directory (optional)</label>
-            <div style="display: flex; gap: 4px; margin-bottom: 2px;">
-                <input type="text" id="custom-encoder-path" style="flex: 1; height: 28px; font-size: 11px; padding: 0 10px;" data-i18n-placeholder="customEncoderPh" placeholder="e.g. F:\models\my-gemma">
-                <button type="button" id="browse-encoder-btn" class="btn-outline" style="font-size: 10px; padding: 2px 8px; white-space: nowrap;" data-i18n="browse">Browse</button>
-                <button type="button" id="save-encoder-path-btn" class="btn-outline" style="font-size: 10px; padding: 2px 8px; white-space: nowrap;" data-i18n="save">Save</button>
-            </div>
-            <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 8px;" data-i18n="customEncoderNote">Overrides default Gemma folder. Must be a model directory, not a single file.</div>
-
-            <div class="checkbox-container" style="margin-top: 4px; margin-bottom: 2px;">
-                <input type="checkbox" id="gemma-fp8-toggle">
-                <label for="gemma-fp8-toggle" style="font-size: 11px;" data-i18n="gemmaFp8Label">Gemma encoder fp8 (saves ~12 GB VRAM)</label>
-            </div>
-            <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 8px;" data-i18n="gemmaFp8Desc">Quantizes Gemma text encoder weights to fp8. Halves encoder VRAM usage. Takes effect on next generation.</div>
-
             <button type="button" id="save-scan-dirs-btn" class="btn-outline" style="font-size: 11px; padding: 4px 12px;" data-i18n="saveScan">Save & Scan</button>
 
             <div id="lora-placement-hint" style="font-size: 10px; color: var(--text-dim); margin-top: 8px; line-height: 1.4;"></div>
