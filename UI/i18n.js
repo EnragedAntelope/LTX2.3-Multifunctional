@@ -291,6 +291,10 @@
             customEncoderSaved: '编码器目录已保存',
             customEncoderNote: '覆盖默认 Gemma 目录。必须是模型文件夹，不是单个文件。',
             logCustomEncoderSaved: '自定义编码器目录已保存',
+            // --- Gemma fp8 ---
+            gemmaFp8Label: 'Gemma 编码器 fp8（节省约 12 GB 显存）',
+            gemmaFp8Desc: '将 Gemma 文本编码器权重量化为 fp8，减半显存占用。下次生成时生效。',
+            logGemmaFp8Saved: 'Gemma fp8 设置已保存',
             // --- Render queue ---
             addToQueue: '加入队列',
             queueLabel: '渲染队列',
@@ -586,6 +590,10 @@
             customEncoderSaved: 'Encoder directory saved',
             customEncoderNote: 'Overrides default Gemma folder. Must be a model directory, not a single file.',
             logCustomEncoderSaved: 'Custom encoder directory saved',
+            // --- Gemma fp8 ---
+            gemmaFp8Label: 'Gemma encoder fp8 (saves ~12 GB VRAM)',
+            gemmaFp8Desc: 'Quantizes Gemma text encoder weights to fp8. Halves encoder VRAM usage. Takes effect on next generation.',
+            logGemmaFp8Saved: 'Gemma fp8 setting saved',
             // --- Render queue ---
             addToQueue: 'Add to Queue',
             queueLabel: 'Render Queue',

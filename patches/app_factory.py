@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hmac
+import json
 import logging
 import os
 import sys
@@ -82,12 +83,106 @@ def _read_custom_encoder_path() -> str | None:
     """
     cfg = Path(os.environ.get("LOCALAPPDATA", "")) / "LTXDesktop" / "settings.json"
     try:
-        import json as _json
-        data = _json.loads(cfg.read_text(encoding="utf-8"))
+        data = json.loads(cfg.read_text(encoding="utf-8"))
         p = data.get("custom_text_encoder_path", "").strip()
         return p if p else None
     except Exception:
         return None
+
+
+def _is_gemma_fp8_enabled() -> bool:
+    """Return True if the user has enabled fp8 quantization for the Gemma text encoder."""
+    cfg = Path(os.environ.get("LOCALAPPDATA", "")) / "LTXDesktop" / "settings.json"
+    try:
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+        return bool(data.get("gemma_fp8_enabled", False))
+    except Exception:
+        return False
+
+
+def _make_gemma_fp8_ops():
+    """Build a ModuleOps that casts all nn.Linear weights in a GemmaTextEncoder to fp8.
+
+    Weights are stored as torch.float8_e4m3fn (halving their VRAM footprint vs bfloat16).
+    A replacement forward upscasts them back to input dtype at inference time, so the
+    operation is numerically equivalent but requires no hardware fp8 matmul support.
+    """
+    from ltx_core.loader.module_ops import ModuleOps
+    from ltx_core.text_encoders.gemma.encoders.base_encoder import GemmaTextEncoder
+
+    try:
+        from ltx_core.quantization.fp8_cast import Fp8CastLinear
+    except ImportError:
+        # Fallback if ltx_core's class isn't accessible — define inline
+        import torch as _t
+        class Fp8CastLinear(_t.nn.Linear):
+            def forward(self, input):
+                return _t.nn.functional.linear(input, self.weight.to(input.dtype), self.bias)
+
+    import torch
+
+    def _apply_fp8(module: GemmaTextEncoder) -> GemmaTextEncoder:
+        cast_count = 0
+        bytes_saved = 0
+        for submod in module.modules():
+            if (
+                isinstance(submod, torch.nn.Linear)
+                and submod.weight is not None
+                and submod.weight.dtype in (torch.float32, torch.float16, torch.bfloat16)
+            ):
+                # bfloat16 = 2 bytes/param, fp8 = 1 byte/param → saves 1 byte per weight element
+                bytes_saved += submod.weight.numel()
+                submod.weight.data = submod.weight.data.to(torch.float8_e4m3fn)
+                submod.__class__ = Fp8CastLinear
+                cast_count += 1
+        logger.info(
+            "[PATCH] Gemma fp8: cast %d linear layers to fp8 (~%.0f MB VRAM saved)",
+            cast_count, bytes_saved / 1024 / 1024,
+        )
+        return module
+
+    return ModuleOps(
+        name="gemma_fp8_linear_cast",
+        matcher=lambda m: isinstance(m, GemmaTextEncoder),
+        mutator=_apply_fp8,
+    )
+
+
+# Flag to avoid installing our PromptEncoder fp8 wrapper more than once per process.
+_gemma_fp8_patch_installed: bool = False
+
+
+def _ensure_gemma_fp8_encoder_patch() -> None:
+    """Wrap PromptEncoder.__init__ to append fp8 module ops when the setting is enabled.
+
+    Must be called AFTER ltx_text_encoder has installed its own PromptEncoder patch
+    (which happens lazily on first pipeline build).  Calling from patched_generate_video
+    before any pipeline creation satisfies this ordering.  Safe to call multiple times.
+    """
+    global _gemma_fp8_patch_installed
+    if _gemma_fp8_patch_installed:
+        return
+    try:
+        from ltx_pipelines.utils.blocks import PromptEncoder as _PE
+        _orig_pe_init = _PE.__init__
+
+        def _fp8_wrapped_init(self, checkpoint_path, gemma_root, dtype, device, registry=None):
+            _orig_pe_init(self, checkpoint_path, gemma_root, dtype, device, registry)
+            if _is_gemma_fp8_enabled():
+                try:
+                    fp8_ops = _make_gemma_fp8_ops()
+                    self._text_encoder_builder = self._text_encoder_builder.with_module_ops(
+                        (*self._text_encoder_builder.module_ops, fp8_ops)
+                    )
+                    logger.info("[PATCH] Gemma fp8: fp8 cast queued on text encoder builder")
+                except Exception as _e:
+                    logger.warning("[PATCH] Gemma fp8 builder patch failed (non-fatal): %s", _e)
+
+        _PE.__init__ = _fp8_wrapped_init
+        _gemma_fp8_patch_installed = True
+        logger.info("[PATCH] PromptEncoder fp8 wrapper installed")
+    except Exception as _e:
+        logger.warning("[PATCH] PromptEncoder fp8 wrapper not installed: %s", _e)
 
 
 def _ltx_desktop_config_dir() -> Path:
@@ -519,7 +614,6 @@ def create_app(
     @app.get("/api/vram-limit")
     async def route_get_vram_limit():
         """Return the user-configured VRAM cap (GB). Empty string means no cap."""
-        import json
         settings_file = _ltx_desktop_config_dir() / "settings.json"
         try:
             if settings_file.exists():
@@ -533,7 +627,6 @@ def create_app(
     @app.post("/api/vram-limit")
     async def route_save_vram_limit(request: Request):
         """Persist the VRAM cap. Sends empty string to remove the cap."""
-        import json
         try:
             body = await request.json()
             limit = body.get("vramLimit", "")
@@ -548,6 +641,34 @@ def create_app(
             with open(settings_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             return {"status": "ok", "vramLimit": limit}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    # ---- Gemma fp8 endpoints ----
+    @app.get("/api/system/gemma-fp8")
+    async def route_get_gemma_fp8():
+        """Return whether fp8 quantization is enabled for the Gemma text encoder."""
+        return {"enabled": _is_gemma_fp8_enabled()}
+
+    @app.post("/api/system/gemma-fp8")
+    async def route_post_gemma_fp8(request: Request):
+        """Persist Gemma fp8 toggle to settings.json.
+        Takes effect on the next generation (pipeline rebuild required).
+        """
+        try:
+            body = await request.json()
+            enabled = bool(body.get("enabled", False))
+            settings_file = _ltx_desktop_config_dir() / "settings.json"
+            if settings_file.exists():
+                with open(settings_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            else:
+                data = {}
+            data["gemma_fp8_enabled"] = enabled
+            settings_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(settings_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return {"status": "ok", "enabled": enabled}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -1366,6 +1487,11 @@ def create_app(
         keyframe_strengths: list[float] | None = None,
         keyframe_times: list[float] | None = None,
     ):
+        # Install PromptEncoder fp8 wrapper now — ltx_text_encoder's own patch will have
+        # run before this point (it's installed lazily on first import of that module),
+        # so our wrapper correctly chains on top of it.
+        _ensure_gemma_fp8_encoder_patch()
+
         logger.info(
             "[PATCH] Starting inference: %dx%d, frames=%d, fps=%s, image_path=%s",
             width, height, num_frames, fps, image_path,

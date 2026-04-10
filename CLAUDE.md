@@ -92,6 +92,7 @@ These are the official backend routers imported by our patched `app_factory.py`:
 | `/api/system/upscaler` | GET/POST | Toggle built-in upscaler on/off |
 | `/api/vram-limit` | GET/POST | Read/write user-configured VRAM cap (GB) stored in settings.json |
 | `/api/text-encoder-path` | GET/POST | Read/write custom Gemma encoder directory path stored in settings.json |
+| `/api/system/gemma-fp8` | GET/POST | Read/write Gemma fp8 quantization toggle (`gemma_fp8_enabled` in settings.json) |
 
 ### Backend Model Types (from `api_types.py`)
 
@@ -215,6 +216,19 @@ Audited all official LTX Desktop backend routes and settings against our UI. Cha
 - **`README.md`** — Changed download link to specific v1.0.4 GitHub release. Added version-lock notice.
 - **`CLAUDE.md`** — Updated version check instructions to use `https://github.com/Lightricks/LTX-Desktop/releases` and `BACKEND_DIR/pyproject.toml` version field. Documents backend `1.0.0` = LTX Desktop `1.0.4`.
 - **`main.py`** — Added `_check_ltx_version()` that reads `pyproject.toml` and prints a prominent warning if the installed backend version doesn't match `1.0.0`. Uses `tomllib` (stdlib in Python 3.11+) or `tomli`; skips silently if neither is available.
+
+### Gemma fp8 quantization (done 2026-04-10)
+
+Added optional fp8 quantization for the Gemma text encoder, halving its VRAM footprint (~24 GB → ~12 GB for Gemma 12B in bfloat16 → fp8).
+
+**How it works**: The Gemma encoder is NOT loaded via `from_pretrained` — it uses a custom `Builder` pattern with `SafetensorsModelStateDictLoader`. `device_map` is therefore inapplicable. `bitsandbytes` is also inapplicable for the same reason. The correct mechanism is `ModuleOps`, which the builder applies post-load. We add a custom `ModuleOps` that iterates all `nn.Linear` layers, casts their weights to `torch.float8_e4m3fn`, and replaces their `forward` with `Fp8CastLinear.forward` (from `ltx_core.quantization.fp8_cast`) which upcasts weights back to input dtype at inference time. This is the same naive fp8 approach used by LTX for the DiT, but adapted for the Gemma encoder.
+
+**Patch ordering**: `ltx_text_encoder.py` patches `PromptEncoder.__init__` lazily (at first pipeline build). Our wrapper is installed via `_ensure_gemma_fp8_encoder_patch()` called at the start of `patched_generate_video`, which runs after the ltx_text_encoder patch. The global flag `_gemma_fp8_patch_installed` prevents double-installation.
+
+- **`patches/app_factory.py`** — Added `_is_gemma_fp8_enabled()`, `_make_gemma_fp8_ops()`, `_ensure_gemma_fp8_encoder_patch()`, and `GET/POST /api/system/gemma-fp8` endpoints. Added `import json` at module level.
+- **`UI/index.html`** — Checkbox below custom encoder note in settings panel.
+- **`UI/index.js`** — `initGemmaFp8()`: loads persisted state from backend with localStorage fast-path; saves on toggle change.
+- **`UI/i18n.js`** — Added `gemmaFp8Label`, `gemmaFp8Desc`, `logGemmaFp8Saved` in both zh and en.
 
 ### Code quality cleanup (done 2026-04-09)
 

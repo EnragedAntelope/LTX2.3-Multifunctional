@@ -390,6 +390,40 @@
         }
     });
 
+    // Gemma fp8 quantization toggle — persisted to backend settings.json
+    async function initGemmaFp8() {
+        const toggle = document.getElementById('gemma-fp8-toggle');
+        if (!toggle) return;
+        // Show cached state immediately
+        const cached = localStorage.getItem('setting_gemma_fp8');
+        if (cached !== null) toggle.checked = cached === 'true';
+        // Sync from backend
+        try {
+            const res = await fetch(`${BASE}/api/system/gemma-fp8`);
+            const data = await res.json();
+            toggle.checked = !!data.enabled;
+            localStorage.setItem('setting_gemma_fp8', String(!!data.enabled));
+        } catch (e) { /* backend not ready yet */ }
+
+        toggle.addEventListener('change', async () => {
+            const enabled = toggle.checked;
+            try {
+                const res = await fetch(`${BASE}/api/system/gemma-fp8`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled }),
+                });
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    localStorage.setItem('setting_gemma_fp8', String(enabled));
+                    addLog(`✅ ${_t('logGemmaFp8Saved')} (${enabled ? 'ON' : 'OFF'})`);
+                }
+            } catch (e) {
+                addLog(`❌ ${e.message}`);
+            }
+        });
+    }
+
     // LM Studio model list fetch — proxied through backend to avoid browser CORS/mixed-content issues
     async function fetchLmStudioModels() {
         const urlInput = document.getElementById('lm-studio-url');
@@ -693,6 +727,7 @@
             initUpscalerToggle();
             initVramLimit();
             initCustomEncoderPath();
+            initGemmaFp8();
 
             // ── Restore & wire ALL persistent UI state ──────────────────────
 

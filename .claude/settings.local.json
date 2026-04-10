@@ -22,7 +22,8 @@
       "Bash(sort -t: -k2 -n)",
       "Bash(sort -t\"'\" -k2)",
       "Bash(gh api:*)",
-      "Bash(node --check \"c:/github_projects/LTX2.3-Multifunctional/UI/i18n.js\")"
+      "Bash(node --check \"c:/github_projects/LTX2.3-Multifunctional/UI/i18n.js\")",
+      "Bash(find /c/Users/Default.LivingRoomPC/AppData/Local/LTXDesktop/python/Lib/site-packages/ltx_pipelines -type f -name \"*.py\" -exec grep -l \"Gemma\\\\|from_pretrained\" {} \\\\;)"
     ]
   }
 }
