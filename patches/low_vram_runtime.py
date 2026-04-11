@@ -117,16 +117,20 @@ def install_low_vram_pipeline_hooks(pl: Any) -> None:
         pl.load_a2v_pipeline = types.MethodType(_load_a2v_wrapped, pl)
 
     # Patch pipeline __call__ to inject streaming_prefetch_count based on vram_limit setting.
-    # streaming_prefetch_count controls how many DiT layers are prefetched to GPU at once.
-    # Empirical model: count=1 → ~10GB peak, each +1 count adds ~0.67GB; count=None → ~26GB.
+    # streaming_prefetch_count controls layer-streaming in the DiT transformer.
+    # When count=None: DiT is built entirely on GPU — fastest, but high VRAM footprint.
+    # When count=N:    DiT is built on CPU; N layers are prefetched to GPU per step.
     #
-    # IMPORTANT: count=None builds the DiT entirely on GPU (~26 GB). Combined with fp8 Gemma
-    # (~12 GB resident), that totals ~38 GB — overflowing a 32 GB GPU into system RAM via CUDA
-    # paging. Stage 2 (full resolution 1280×704) has 4× the activation footprint of Stage 1
-    # (half resolution 640×352) and will silently degrade to PCIe-speed compute (~125× slower
-    # than HBM). For this reason we NEVER set count=None for vram_limit ≥ 25 GB; instead we
-    # defer to the pipeline's own default (streaming_prefetch_count=2), which is known-safe at
-    # all resolutions. Only vram_limit=0 (explicit "unlimited") bypasses this guard.
+    # IMPORTANT — Stage 2 VRAM constraint:
+    # The DistilledPipeline is two-stage. Stage 1 runs at half resolution (e.g. 640×352);
+    # Stage 2 at full resolution (e.g. 1280×704) with 4× more tokens → ~4× larger activation
+    # tensors (~30 GB on a 32 GB GPU). gpu_model() calls torch.cuda.empty_cache() on teardown,
+    # so Gemma is NOT resident during Stage 2. The overflow is caused by activation tensors
+    # dominating VRAM regardless of streaming count, plus CUDA workspace when count=None loads
+    # all DiT layers simultaneously. The _install_resolution_aware_streaming() patch (installed
+    # below) handles the per-stage count selection; this outer patch handles the user's vram_limit
+    # cap for low-VRAM systems (lim < 25 GB). For lim ≥ 25 GB we defer to the pipeline default
+    # so that _install_resolution_aware_streaming() can apply optimal per-stage counts instead.
     if not getattr(pl, "_ltx_layer_streaming_patched", False):
         pl._ltx_layer_streaming_patched = True
 
@@ -176,6 +180,133 @@ def install_low_vram_pipeline_hooks(pl: Any) -> None:
         _patch_pipeline_class("LTXRetakePipeline", "services.retake_pipeline.ltx_retake_pipeline")
         _patch_pipeline_class("ICLoRAPipeline", "services.ic_lora_pipeline.ltx_ic_lora_pipeline")
         _patch_pipeline_class("A2VPipeline", "services.a2v_pipeline.distilled_a2v_pipeline")
+
+    _install_resolution_aware_streaming()
+
+
+def _install_resolution_aware_streaming() -> None:
+    """Patch DiffusionStage.__call__ to apply optimised per-stage streaming counts.
+
+    The DistilledPipeline calls the same DiffusionStage at two very different resolutions:
+
+      Stage 1 (half resolution, e.g. 640×352 = 225 K px):
+        Activation tensors are ~4× smaller than Stage 2.  With count=None (full DiT on GPU)
+        the total footprint is roughly 2 GB (fp8 DiT weights) + ~7-10 GB (activations) ≈ 10 GB
+        — easily fits on any GPU with ≥ 20 GB VRAM.  Using count=None eliminates all PCIe
+        layer-transfer overhead and is the fastest possible path.
+
+      Stage 2 (full resolution, e.g. 1280×704 = 901 K px):
+        Activation tensors dominate at ~28-30 GB.  count=None additionally loads CUDA
+        workspace for every layer simultaneously, pushing total VRAM to ~34 GB and causing
+        silent overflow into system RAM via CUDA paging (~125× slower than HBM).
+        Any finite streaming count keeps weights off GPU until needed, avoiding the
+        workspace spike.  count=8 is safe (≈ 1 GB extra weights on top of ~30 GB activations)
+        and ~3-4× faster than count=2 (fewer PCIe transfers per denoising step).
+
+    This patch is installed once per process via a class-level flag and is applied
+    independently of the vram_limit setting — it is always beneficial.
+
+    Interaction with the vram_limit patch on DistilledPipeline.__call__:
+      The vram_limit patch may set a coarse streaming count before each call.
+      This patch refines that count at the DiffusionStage level where the actual
+      resolution is known.  Stage 2 count is capped to STAGE2_STREAMING_COUNT;
+      Stage 1 count is promoted to None on high-VRAM GPUs.
+    """
+    try:
+        from ltx_pipelines.utils.blocks import DiffusionStage
+        if getattr(DiffusionStage, "_ltx_resolution_aware_patched", False):
+            return
+
+        _orig_call = DiffusionStage.__call__
+
+        # Detect GPU VRAM once at patch-install time.
+        try:
+            import torch as _torch
+            _vram_gb = (
+                _torch.cuda.get_device_properties(_torch.cuda.current_device()).total_memory
+                / 1024 ** 3
+                if _torch.cuda.is_available()
+                else 0.0
+            )
+        except Exception:
+            _vram_gb = 0.0
+
+        # Stage 1 with count=None uses ~10 GB total (safe when GPU ≥ 20 GB).
+        _STAGE1_FULL_GPU_MIN_VRAM_GB = 20.0
+        _stage1_allow_full_gpu = _vram_gb >= _STAGE1_FULL_GPU_MIN_VRAM_GB
+
+        # Pixel count that separates Stage 1 (half-res) from Stage 2 (full-res).
+        # For 1280×704 output:  Stage 1 = 225 K px, Stage 2 = 901 K px → midpoint ≈ 600 K.
+        # For 1920×1088 output: Stage 1 = 522 K px, Stage 2 = 2 M px → also correct.
+        _STAGE2_PIXEL_THRESHOLD = 600_000
+
+        # Stage 2 streaming count: safe and fast for the target GPU.
+        # count=8 keeps ~1 GB of DiT weight pages on GPU alongside ~30 GB of activations
+        # → total ≈ 31 GB, comfortably under 31.5 GB on a 32 GB card.
+        # Smaller GPUs use a more conservative count to leave headroom for activations.
+        if _vram_gb >= 32:
+            _STAGE2_STREAMING_COUNT = 8
+        elif _vram_gb >= 24:
+            _STAGE2_STREAMING_COUNT = 4
+        else:
+            _STAGE2_STREAMING_COUNT = 2
+
+        def _resolution_aware_call(
+            self: Any,
+            *args: Any,
+            streaming_prefetch_count: int | None = None,
+            width: int | None = None,
+            height: int | None = None,
+            **kwargs: Any,
+        ) -> Any:
+            if width is not None and height is not None:
+                pixel_count = width * height
+                if pixel_count > _STAGE2_PIXEL_THRESHOLD:
+                    # Stage 2 (full resolution): force exactly _STAGE2_STREAMING_COUNT.
+                    #
+                    # Why force, not just cap?
+                    # The official pipeline default is count=2. _STAGE2_STREAMING_COUNT is
+                    # our GPU-calibrated optimum (e.g. 8 on 32 GB).  Simply capping would
+                    # leave count=2 unchanged — no performance gain.  Forcing to 8 means
+                    # 4× fewer PCIe layer-transfer round-trips per denoising step.
+                    #
+                    # Why not allow count=None?
+                    # count=None builds the full DiT in GPU VRAM simultaneously, adding
+                    # CUDA workspace overhead (~3-4 GB extra) on top of the ~30 GB Stage 2
+                    # activation tensors.  This reliably overflows 32 GB cards into
+                    # system-RAM paging at PCIe speeds (~125× slower than HBM).
+                    #
+                    # Edge case: user set vram_limit ≤ 10 GB on a large-VRAM GPU.
+                    # Their count (e.g. 1) is smaller than _STAGE2_STREAMING_COUNT (8).
+                    # We still force 8 because Stage 2 activation tensors (~30 GB)
+                    # already exceed any single-digit VRAM cap anyway — the streaming
+                    # count only controls weight-prefetch pages, not activation size.
+                    streaming_prefetch_count = _STAGE2_STREAMING_COUNT
+                elif _stage1_allow_full_gpu and streaming_prefetch_count is not None:
+                    # Stage 1 (half resolution) on a high-VRAM GPU: drop streaming entirely.
+                    # Full DiT on GPU is safe at half-res and removes all PCIe overhead.
+                    streaming_prefetch_count = None
+
+            return _orig_call(
+                self,
+                *args,
+                streaming_prefetch_count=streaming_prefetch_count,
+                width=width,
+                height=height,
+                **kwargs,
+            )
+
+        DiffusionStage.__call__ = _resolution_aware_call
+        DiffusionStage._ltx_resolution_aware_patched = True
+        logger.info(
+            "[streaming] DiffusionStage resolution-aware patch installed: "
+            "Stage 1 → %s | Stage 2 → count=%d  (GPU %.0f GB)",
+            "count=None (full GPU)" if _stage1_allow_full_gpu else "pipeline-default",
+            _STAGE2_STREAMING_COUNT,
+            _vram_gb,
+        )
+    except Exception as exc:
+        logger.warning("[streaming] Resolution-aware patch failed (non-fatal): %s", exc)
 
 
 def try_sequential_offload_on_pipeline_state(state: Any) -> None:

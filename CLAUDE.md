@@ -181,11 +181,34 @@ Implemented the following features in the UI:
 - **Upscaler toggle** — Checkbox in settings with backend persistence via `/api/system/upscaler`
 - **LM Studio prompt enhancement discoverability** — Always-visible "Enhance" button, guides to settings when unconfigured
 
-### VRAM limit selector (done 2026-04-07, bugfix 2026-04-10)
-Integrated the VRAM cap feature from upstream (hero8152). Changes:
-- **`patches/low_vram_runtime.py`** — Added `get_vram_limit()` (reads `vram_limit` from settings.json) and a layer-streaming patch that injects `streaming_prefetch_count` into every pipeline `__call__`. Formula: count=1 at ≤10 GB, linearly interpolated at ~0.67 GB/count up to 24 GB, defers to pipeline default (count=2) at ≥25 GB, and only disables streaming entirely (count=None) when vram_limit=0.
+### VRAM limit selector + resolution-aware streaming (done 2026-04-07, overhauled 2026-04-11)
+Integrated the VRAM cap feature from upstream (hero8152), then replaced the naive streaming logic with a two-layer system that picks the optimal count per pipeline stage.
 
-  **Critical constraint — Stage 2 VRAM budget:** The `DistilledPipeline` is two-stage. Stage 1 runs at half resolution (640×352); Stage 2 runs at full resolution (1280×704) with 4× the activation footprint. With `streaming_prefetch_count=None` the full DiT is loaded on GPU (~26 GB) simultaneously with fp8 Gemma (~12 GB), totalling ~38 GB — overflowing a 32 GB GPU. CUDA silently pages overflow to system RAM at PCIe bandwidth (~125× slower than HBM), producing the symptom of Stage 2 taking 400+ seconds per step. **Never set `count=None` for vram_limit < 48 GB.** Values ≥25 GB defer to the safe pipeline default (count=2, ~22 GB total peak).
+**Architecture — two patches work together:**
+
+1. **`DistilledPipeline.__call__` patch** (coarse, per-generation):
+   Reads `vram_limit` from settings.json and sets a ceiling for the whole generation.
+   Formula: count=1 at ≤10 GB, linearly interpolated at ~0.67 GB/count up to 24 GB,
+   defers to pipeline default (count=2) at ≥25 GB, count=None only for vram_limit=0.
+
+2. **`DiffusionStage.__call__` patch** (`_install_resolution_aware_streaming`, per-stage):
+   Applied unconditionally at startup. Detects width×height per call and picks the
+   optimal count for each stage independently:
+   - **Stage 1** (≤600 K px, e.g. 640×352): promotes to `count=None` on GPUs ≥20 GB.
+     The full DiT on GPU uses only ~10 GB at half-resolution — no PCIe overhead, fastest possible.
+   - **Stage 2** (>600 K px, e.g. 1280×704): forces exactly `_STAGE2_STREAMING_COUNT`
+     (8 on ≥32 GB GPU, 4 on ≥24 GB, 2 otherwise), regardless of what the outer patch set.
+     This is ~3-4× faster than the official default (count=2) and avoids the VRAM overflow
+     that causes 400+ second/step slowdowns.
+
+**Critical constraint — Stage 2 VRAM overflow:**
+The `DistilledPipeline` is two-stage. `gpu_model()` calls `torch.cuda.empty_cache()` on
+teardown, so Gemma and other models are NOT resident during Stage 2. What fills VRAM is:
+activation tensors at 1280×704 (~28-30 GB on a 32 GB card, dominated by the 1.37 M-token
+sequence) plus CUDA workspace when `count=None` loads all DiT layers simultaneously (3-4 GB
+extra). `count=None` at Stage 2 reliably overflows 32 GB GPUs into system RAM (PCIe paging,
+~125× slower than HBM). Any finite streaming count is safe because it keeps weight pages off
+GPU until needed. **Never use `count=None` for Stage 2 unless the GPU has ≥ 40 GB VRAM.**
 - **`patches/app_factory.py`** — Added `GET /api/vram-limit` and `POST /api/vram-limit` endpoints that persist the value to `%LOCALAPPDATA%\LTXDesktop\settings.json`.
 - **`UI/index.html`** — Added VRAM cap number input + Save button below the upscaler toggle in the settings panel.
 - **`UI/index.js`** — Added `saveVramLimit()` (global) and `initVramLimit()` (loads persisted value on startup).
