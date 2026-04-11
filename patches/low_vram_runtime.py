@@ -11,6 +11,10 @@ from typing import Any
 
 logger = logging.getLogger("ltx_low_vram")
 
+# Tracks pixel-count buckets for which the ultra-HD VRAM overflow warning has already
+# been emitted (one warning per resolution per process, not one per denoising step).
+_warned_ultrahd_pixels: set[int] = set()
+
 
 def _ltx_desktop_config_dir() -> Path:
     p = (
@@ -240,11 +244,22 @@ def _install_resolution_aware_streaming() -> None:
         # For 1920×1088 output: Stage 1 = 522 K px, Stage 2 = 2 M px → also correct.
         _STAGE2_PIXEL_THRESHOLD = 600_000
 
+        # Pixel count that identifies ultra-HD Stage 2 (1920×1088 and above).
+        # At this scale the hidden-state tensor alone is ~51 GB (12.5 M tokens × 2048 ×
+        # bfloat16), which overflows 32 GB VRAM regardless of streaming count. Use the
+        # minimum streaming count (2) to leave maximum VRAM headroom for activation paging.
+        # Threshold sits between 720p Stage 2 (1280×704 = 901 K px) and 1080p Stage 2
+        # (1920×1088 = 2.09 M px).
+        _STAGE2_ULTRAHD_THRESHOLD = 1_400_000
+        _STAGE2_ULTRAHD_COUNT = 2
+
         # Stage 2 streaming count: safe and fast for the target GPU.
         # count=8 keeps ~1 GB of DiT weight pages on GPU alongside ~30 GB of activations
         # → total ≈ 31 GB, comfortably under 31.5 GB on a 32 GB card.
         # Smaller GPUs use a more conservative count to leave headroom for activations.
-        if _vram_gb >= 32:
+        # NOTE: threshold is 30 GB (not 32) because RTX 5090 and similar 32 GB cards
+        # report ~31 GB after OS/driver overhead. >= 32 is never true for those cards.
+        if _vram_gb >= 30:
             _STAGE2_STREAMING_COUNT = 8
         elif _vram_gb >= 24:
             _STAGE2_STREAMING_COUNT = 4
@@ -262,26 +277,35 @@ def _install_resolution_aware_streaming() -> None:
             if width is not None and height is not None:
                 pixel_count = width * height
                 if pixel_count > _STAGE2_PIXEL_THRESHOLD:
-                    # Stage 2 (full resolution): force exactly _STAGE2_STREAMING_COUNT.
-                    #
-                    # Why force, not just cap?
-                    # The official pipeline default is count=2. _STAGE2_STREAMING_COUNT is
-                    # our GPU-calibrated optimum (e.g. 8 on 32 GB).  Simply capping would
-                    # leave count=2 unchanged — no performance gain.  Forcing to 8 means
-                    # 4× fewer PCIe layer-transfer round-trips per denoising step.
-                    #
-                    # Why not allow count=None?
-                    # count=None builds the full DiT in GPU VRAM simultaneously, adding
-                    # CUDA workspace overhead (~3-4 GB extra) on top of the ~30 GB Stage 2
-                    # activation tensors.  This reliably overflows 32 GB cards into
-                    # system-RAM paging at PCIe speeds (~125× slower than HBM).
-                    #
-                    # Edge case: user set vram_limit ≤ 10 GB on a large-VRAM GPU.
-                    # Their count (e.g. 1) is smaller than _STAGE2_STREAMING_COUNT (8).
-                    # We still force 8 because Stage 2 activation tensors (~30 GB)
-                    # already exceed any single-digit VRAM cap anyway — the streaming
-                    # count only controls weight-prefetch pages, not activation size.
-                    streaming_prefetch_count = _STAGE2_STREAMING_COUNT
+                    if pixel_count > _STAGE2_ULTRAHD_THRESHOLD:
+                        # Ultra-HD Stage 2 (1920×1088+): activation tensors alone are
+                        # ~51 GB (12.5 M tokens × d_model × bf16), which overflows 32 GB
+                        # VRAM regardless of streaming count. The streaming count only
+                        # controls weight prefetching (~0.25 GB per count), not the hidden
+                        # state. Use the minimum count (2) to leave maximum VRAM headroom
+                        # for activation page-ins from system RAM.
+                        rounded = (pixel_count // 100_000) * 100_000
+                        if rounded not in _warned_ultrahd_pixels:
+                            _warned_ultrahd_pixels.add(rounded)
+                            logger.warning(
+                                "[streaming] Stage 2 ultra-HD (%.1fM px, ~%dM tokens): "
+                                "activation tensors will likely exceed VRAM — system RAM "
+                                "will be used and steps will be slow. Reduce duration or "
+                                "resolution to stay within VRAM. Using count=%d to "
+                                "minimise weight overhead.",
+                                pixel_count / 1_000_000,
+                                pixel_count * 96 // 1_000_000,  # rough token estimate
+                                _STAGE2_ULTRAHD_COUNT,
+                            )
+                        streaming_prefetch_count = _STAGE2_ULTRAHD_COUNT
+                    else:
+                        # Standard full-res Stage 2 (720p range): force GPU-calibrated
+                        # optimum count. The official pipeline default is count=2;
+                        # forcing to 8 gives 4× fewer PCIe layer-transfer round-trips.
+                        # count=None is not used: it loads all DiT layers simultaneously,
+                        # adding CUDA workspace overhead on top of ~30 GB activations
+                        # and reliably overflows 32 GB cards into system-RAM paging.
+                        streaming_prefetch_count = _STAGE2_STREAMING_COUNT
                 elif _stage1_allow_full_gpu and streaming_prefetch_count is not None:
                     # Stage 1 (half resolution) on a high-VRAM GPU: drop streaming entirely.
                     # Full DiT on GPU is safe at half-res and removes all PCIe overhead.
@@ -300,9 +324,10 @@ def _install_resolution_aware_streaming() -> None:
         DiffusionStage._ltx_resolution_aware_patched = True
         logger.info(
             "[streaming] DiffusionStage resolution-aware patch installed: "
-            "Stage 1 → %s | Stage 2 → count=%d  (GPU %.0f GB)",
+            "Stage 1 → %s | Stage 2 ≤1.4Mpx → count=%d | Stage 2 >1.4Mpx (1080p+) → count=%d  (GPU %.0f GB)",
             "count=None (full GPU)" if _stage1_allow_full_gpu else "pipeline-default",
             _STAGE2_STREAMING_COUNT,
+            _STAGE2_ULTRAHD_COUNT,
             _vram_gb,
         )
     except Exception as exc:
