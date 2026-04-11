@@ -119,6 +119,14 @@ def install_low_vram_pipeline_hooks(pl: Any) -> None:
     # Patch pipeline __call__ to inject streaming_prefetch_count based on vram_limit setting.
     # streaming_prefetch_count controls how many DiT layers are prefetched to GPU at once.
     # Empirical model: count=1 → ~10GB peak, each +1 count adds ~0.67GB; count=None → ~26GB.
+    #
+    # IMPORTANT: count=None builds the DiT entirely on GPU (~26 GB). Combined with fp8 Gemma
+    # (~12 GB resident), that totals ~38 GB — overflowing a 32 GB GPU into system RAM via CUDA
+    # paging. Stage 2 (full resolution 1280×704) has 4× the activation footprint of Stage 1
+    # (half resolution 640×352) and will silently degrade to PCIe-speed compute (~125× slower
+    # than HBM). For this reason we NEVER set count=None for vram_limit ≥ 25 GB; instead we
+    # defer to the pipeline's own default (streaming_prefetch_count=2), which is known-safe at
+    # all resolutions. Only vram_limit=0 (explicit "unlimited") bypasses this guard.
     if not getattr(pl, "_ltx_layer_streaming_patched", False):
         pl._ltx_layer_streaming_patched = True
 
@@ -133,17 +141,24 @@ def install_low_vram_pipeline_hooks(pl: Any) -> None:
                     lim = get_vram_limit()
                     if lim is not None:
                         if lim == 0:
-                            # 0 = unlimited: disable layer streaming entirely, fastest path
+                            # 0 = explicit "unlimited": disable layer streaming.
+                            # WARNING: count=None loads the full DiT on GPU (~26 GB).
+                            # Only use this on GPUs with ≥ 48 GB VRAM.
                             kwargs["streaming_prefetch_count"] = None
-                            logger.info("vram_limit: unlimited (0) — layer streaming disabled.")
+                            logger.info("vram_limit: unlimited (0) — layer streaming disabled (requires ≥48 GB VRAM).")
+                        elif lim >= 25.0:
+                            # Do not override: defer to the pipeline's own default (count=2).
+                            # count=None would overflow VRAM on 32 GB GPUs at Stage 2 full res.
+                            logger.debug(
+                                "vram_limit: %.1fGB ≥ 25 GB — deferring to pipeline default (count=2) to avoid Stage 2 VRAM overflow.",
+                                lim,
+                            )
                         else:
                             if lim <= 10.0:
                                 count = 1
-                            elif lim >= 25.0:
-                                count = None  # close enough to max, don't restrict
                             else:
                                 extra_gb = float(lim) - 10.0
-                                count = max(1, min(32, 1 + round(extra_gb / 0.67)))
+                                count = max(1, min(24, 1 + round(extra_gb / 0.67)))
                             kwargs["streaming_prefetch_count"] = count
                             logger.info(
                                 "vram_limit: %.1fGB → streaming_prefetch_count=%s",

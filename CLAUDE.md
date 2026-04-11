@@ -181,9 +181,11 @@ Implemented the following features in the UI:
 - **Upscaler toggle** — Checkbox in settings with backend persistence via `/api/system/upscaler`
 - **LM Studio prompt enhancement discoverability** — Always-visible "Enhance" button, guides to settings when unconfigured
 
-### VRAM limit selector (done 2026-04-07)
+### VRAM limit selector (done 2026-04-07, bugfix 2026-04-10)
 Integrated the VRAM cap feature from upstream (hero8152). Changes:
-- **`patches/low_vram_runtime.py`** — Added `get_vram_limit()` (reads `vram_limit` from settings.json) and a layer-streaming patch that injects `streaming_prefetch_count` into every pipeline `__call__`. Formula: count=1 at ≤10 GB, None (unlimited) at ≥25 GB, linearly interpolated at ~0.67 GB/count in between.
+- **`patches/low_vram_runtime.py`** — Added `get_vram_limit()` (reads `vram_limit` from settings.json) and a layer-streaming patch that injects `streaming_prefetch_count` into every pipeline `__call__`. Formula: count=1 at ≤10 GB, linearly interpolated at ~0.67 GB/count up to 24 GB, defers to pipeline default (count=2) at ≥25 GB, and only disables streaming entirely (count=None) when vram_limit=0.
+
+  **Critical constraint — Stage 2 VRAM budget:** The `DistilledPipeline` is two-stage. Stage 1 runs at half resolution (640×352); Stage 2 runs at full resolution (1280×704) with 4× the activation footprint. With `streaming_prefetch_count=None` the full DiT is loaded on GPU (~26 GB) simultaneously with fp8 Gemma (~12 GB), totalling ~38 GB — overflowing a 32 GB GPU. CUDA silently pages overflow to system RAM at PCIe bandwidth (~125× slower than HBM), producing the symptom of Stage 2 taking 400+ seconds per step. **Never set `count=None` for vram_limit < 48 GB.** Values ≥25 GB defer to the safe pipeline default (count=2, ~22 GB total peak).
 - **`patches/app_factory.py`** — Added `GET /api/vram-limit` and `POST /api/vram-limit` endpoints that persist the value to `%LOCALAPPDATA%\LTXDesktop\settings.json`.
 - **`UI/index.html`** — Added VRAM cap number input + Save button below the upscaler toggle in the settings panel.
 - **`UI/index.js`** — Added `saveVramLimit()` (global) and `initVramLimit()` (loads persisted value on startup).
