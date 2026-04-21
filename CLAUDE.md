@@ -170,6 +170,36 @@ If the version has bumped, audit the diff before making any other changes.
 
 ## Completed Work
 
+### IC-LoRA and Retake UI Exposure (done 2026-04-20)
+Implemented UI for previously backend-only features:
+
+**IC-LoRA Tab (`tab-ic-lora`):**
+- Video upload zone with drag-and-drop support
+- Conditioning type toggle (Canny/Depth)
+- Frame time selector for extraction point
+- Extract button with loading state
+- Conditioning preview display
+- Strength slider (0-2, step 0.05)
+- Inference steps slider (1-50)
+- Full bilingual i18n support
+
+**Retake Tab (`tab-retake`):**
+- Video selector populated from history API
+- Duration display for selected video
+- Start time and duration inputs with validation
+- Three replacement modes (video only, audio only, both)
+- Conditional prompt field (shown for video modes)
+- Time validation (start + duration ≤ video length)
+- Full bilingual i18n support
+
+**Implementation Details:**
+- Added `handleIcLoraVideoUpload()`, `extractIcLoraConditioning()`, `clearIcLoraVideo()` functions
+- Added `refreshRetakeVideoList()`, `validateRetakeTime()`, `onRetakeModeChange()` functions
+- Extended `buildCurrentJob()` to handle `'ic-lora'` and `'retake'` modes
+- Extended `switchMode()` to show/hide new panels and refresh retake video list
+- Added 40+ new i18n keys for both languages
+- Backend endpoints used: `POST /api/ic-lora/extract`, `POST /api/ic-lora/generate`, `POST /api/retake`
+
 ### Collapse Folder Structure (done 2026-04-05)
 Removed the `LTX2.3/` and `LTX2.3-1.0.3/` subdirectory nesting. The root now contains `patches/`, `UI/`, `main.py`, `run.bat` directly. Old code archived in `archive/`.
 

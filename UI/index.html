@@ -155,6 +155,14 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
                 <span data-i18n="tabImage">图像生成</span>
             </div>
+            <div id="tab-ic-lora" class="tab" onclick="switchMode('ic-lora')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+                <span data-i18n="tabIcLora">IC-LoRA</span>
+            </div>
+            <div id="tab-retake" class="tab" onclick="switchMode('retake')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 21h5v-5"></path></svg>
+                <span data-i18n="tabRetake">片段重绘</span>
+            </div>
         </div>
         
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
@@ -495,6 +503,125 @@
                 <label data-i18n="loraStrength">LoRA 强度</label>
                 <input type="range" id="batch-lora-strength" min="0.1" max="2.0" step="0.1" value="1.2" style="width: 100%;" oninput="document.getElementById('batch-lora-strength-val').textContent = this.value">
                 <span id="batch-lora-strength-val" style="font-size: 12px; color: var(--accent);">1.2</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- IC-LoRA模式选项 -->
+    <div id="ic-lora-opts" class="sidebar-section" style="display:none">
+        <div class="setting-group">
+            <div class="group-title" data-i18n="icLoraTitle">IC-LoRA 视频条件控制</div>
+            <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 12px; line-height: 1.4;" data-i18n="icLoraDesc">提取视频的边缘(Canny)或深度(Depth)信息，用于生成风格一致的新视频</div>
+            
+            <label data-i18n="icLoraSourceVideo">源视频 (Source)</label>
+            <div class="upload-zone" id="ic-lora-video-drop-zone" onclick="document.getElementById('ic-lora-video-input').click()" style="margin-bottom: 10px;">
+                <div class="clear-img-overlay" id="clear-ic-lora-video-overlay" onclick="event.stopPropagation(); clearIcLoraVideo()" style="display:none;">×</div>
+                <div id="ic-lora-video-placeholder">
+                    <div class="upload-icon">📹</div>
+                    <div class="upload-text" data-i18n="icLoraUploadVideo">拖入或点击上传视频</div>
+                </div>
+                <div id="ic-lora-video-status" style="display:none;">
+                    <div class="upload-icon" style="color:var(--accent);">✔️</div>
+                    <div id="ic-lora-video-filename" class="upload-text"></div>
+                </div>
+                <input type="file" id="ic-lora-video-input" accept="video/*" style="display:none" onchange="handleIcLoraVideoUpload(this.files[0])">
+            </div>
+            <input type="hidden" id="ic-lora-video-path">
+            
+            <label data-i18n="icLoraConditioningType">条件类型</label>
+            <div class="smart-param-modes" role="radiogroup" aria-label="Conditioning Type" style="margin-bottom: 12px;">
+                <label class="smart-param-mode-opt">
+                    <input type="radio" name="ic-lora-type" value="canny" checked onchange="onIcLoraTypeChange()">
+                    <span class="smart-param-mode-title" data-i18n="icLoraCanny">Canny 边缘检测</span>
+                </label>
+                <label class="smart-param-mode-opt">
+                    <input type="radio" name="ic-lora-type" value="depth" onchange="onIcLoraTypeChange()">
+                    <span class="smart-param-mode-title" data-i18n="icLoraDepth">Depth 深度图</span>
+                </label>
+            </div>
+            
+            <div class="label-group" style="margin-bottom: 10px;">
+                <label data-i18n="icLoraFrameTime">提取帧时间 (秒)</label>
+                <input type="number" id="ic-lora-frame-time" min="0" step="0.1" value="0" style="width: 80px; height: 28px; font-size: 11px; padding: 0 8px; text-align: center;">
+            </div>
+            
+            <button type="button" id="ic-lora-extract-btn" class="btn-outline" onclick="extractIcLoraConditioning()" style="width: 100%; margin-bottom: 12px; font-size: 12px;" data-i18n="icLoraExtractBtn">提取条件图像</button>
+            
+            <div id="ic-lora-preview-container" style="display:none; margin-bottom: 12px;">
+                <label data-i18n="icLoraPreview">条件预览</label>
+                <div style="border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--item);">
+                    <img id="ic-lora-preview-img" style="width: 100%; display: block;" src="" alt="Conditioning Preview">
+                </div>
+            </div>
+            
+            <div id="ic-lora-gen-settings" style="display:none;">
+                <div style="margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label style="margin-bottom: 0;" data-i18n="icLoraStrength">条件强度</label>
+                        <span style="font-size: 11px; color: var(--accent); font-weight: 600;" id="ic-lora-strength-val">1.0</span>
+                    </div>
+                    <input type="range" id="ic-lora-strength" min="0" max="2" step="0.05" value="1.0" style="width: 100%; margin-top: 4px;" oninput="document.getElementById('ic-lora-strength-val').innerText=this.value">
+                </div>
+                
+                <div style="margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label style="margin-bottom: 0;" data-i18n="icLoraSteps">推理步数</label>
+                        <span style="font-size: 11px; color: var(--accent); font-weight: 600;" id="ic-lora-steps-val">30</span>
+                    </div>
+                    <input type="range" id="ic-lora-steps" min="1" max="50" value="30" style="width: 100%; margin-top: 4px;" oninput="document.getElementById('ic-lora-steps-val').innerText=this.value">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Retake模式选项 -->
+    <div id="retake-opts" class="sidebar-section" style="display:none">
+        <div class="setting-group">
+            <div class="group-title" data-i18n="retakeTitle">视频片段重绘 / Retake</div>
+            <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 12px; line-height: 1.4;" data-i18n="retakeDesc">选择已有视频，替换指定时间范围的片段内容</div>
+            
+            <label data-i18n="retakeSelectVideo">选择视频</label>
+            <select id="retake-video-select" style="margin-bottom: 12px; font-size: 11px;" onchange="onRetakeVideoSelect()">
+                <option value="" data-i18n="retakeSelectPlaceholder">-- 从历史记录选择视频 --</option>
+            </select>
+            <input type="hidden" id="retake-video-path">
+            
+            <div id="retake-info" style="display:none; padding: 8px; background: var(--item); border-radius: 6px; margin-bottom: 12px; font-size: 11px; color: var(--text-dim);">
+                <div><span data-i18n="retakeDuration">视频时长</span>: <span id="retake-video-duration">--</span></div>
+            </div>
+            
+            <div class="flex-row" style="margin-bottom: 12px;">
+                <div class="flex-1">
+                    <label data-i18n="retakeStartTime">起始时间 (秒)</label>
+                    <input type="number" id="retake-start-time" min="0" step="0.1" value="0" style="width: 100%; height: 28px; font-size: 11px; padding: 0 8px; text-align: center;" onchange="validateRetakeTime()">
+                </div>
+                <div class="flex-1">
+                    <label data-i18n="retakeDuration">持续时间 (秒)</label>
+                    <input type="number" id="retake-duration" min="0.5" step="0.1" value="2" style="width: 100%; height: 28px; font-size: 11px; padding: 0 8px; text-align: center;" onchange="validateRetakeTime()">
+                </div>
+            </div>
+            
+            <div id="retake-time-error" style="display:none; color: #f87171; font-size: 10px; margin-bottom: 10px;" data-i18n="retakeTimeError">起始时间 + 持续时间不能超过视频总长</div>
+            
+            <label data-i18n="retakeMode">替换模式</label>
+            <div class="smart-param-modes" role="radiogroup" aria-label="Retake Mode" style="margin-bottom: 12px;">
+                <label class="smart-param-mode-opt">
+                    <input type="radio" name="retake-mode" value="replace_video" checked onchange="onRetakeModeChange()">
+                    <span class="smart-param-mode-title" data-i18n="retakeReplaceVideo">仅替换画面</span>
+                </label>
+                <label class="smart-param-mode-opt">
+                    <input type="radio" name="retake-mode" value="replace_audio" onchange="onRetakeModeChange()">
+                    <span class="smart-param-mode-title" data-i18n="retakeReplaceAudio">仅替换音频</span>
+                </label>
+                <label class="smart-param-mode-opt">
+                    <input type="radio" name="retake-mode" value="replace_audio_and_video" onchange="onRetakeModeChange()">
+                    <span class="smart-param-mode-title" data-i18n="retakeReplaceBoth">替换画面+音频</span>
+                </label>
+            </div>
+            
+            <div id="retake-prompt-container">
+                <label data-i18n="retakePrompt">重绘提示词 (可选)</label>
+                <textarea id="retake-prompt" data-i18n-placeholder="retakePromptPh" placeholder="输入用于替换片段的画面描述词，留空则使用原视频语义" style="height: 50px; font-size: 11px; margin-bottom: 10px;"></textarea>
             </div>
         </div>
     </div>

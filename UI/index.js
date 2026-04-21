@@ -1818,15 +1818,32 @@
         document.getElementById('tab-video').classList.toggle('active', m === 'video');
         document.getElementById('tab-batch').classList.toggle('active', m === 'batch');
         document.getElementById('tab-upscale').classList.toggle('active', m === 'upscale');
+        document.getElementById('tab-ic-lora').classList.toggle('active', m === 'ic-lora');
+        document.getElementById('tab-retake').classList.toggle('active', m === 'retake');
         
         document.getElementById('image-opts').style.display = m === 'image' ? 'block' : 'none';
         document.getElementById('video-opts').style.display = m === 'video' ? 'block' : 'none';
         document.getElementById('batch-opts').style.display = m === 'batch' ? 'block' : 'none';
         document.getElementById('upscale-opts').style.display = m === 'upscale' ? 'block' : 'none';
+        document.getElementById('ic-lora-opts').style.display = m === 'ic-lora' ? 'block' : 'none';
+        document.getElementById('retake-opts').style.display = m === 'retake' ? 'block' : 'none';
         if (m === 'batch') updateBatchSegments();
+        if (m === 'retake') refreshRetakeVideoList();
 
         // 如果切到图像模式，隐藏提示词框外的其他东西
         refreshPromptPlaceholder();
+        
+        // Update button text based on mode
+        const btn = document.getElementById('mainBtn');
+        if (btn) {
+            if (m === 'ic-lora') {
+                btn.textContent = _t('icLoraRender') || '开始 IC-LoRA 生成';
+            } else if (m === 'retake') {
+                btn.textContent = _t('retakeRender') || '开始片段重绘';
+            } else {
+                btn.textContent = _t('mainRender') || '开始渲染';
+            }
+        }
     }
 
     function refreshPromptPlaceholder() {
@@ -2002,6 +2019,58 @@
                 };
                 label = `[batch-seg ${segments.length}×] ${effectivePrompt.slice(0, 40)}`;
             }
+        } else if (currentMode === 'ic-lora') {
+            const videoPath = document.getElementById('ic-lora-video-path').value;
+            if (!videoPath) throw new Error(_t('icLoraNoVideo') || 'Please upload a video for IC-LoRA');
+            
+            const conditioningType = document.querySelector('input[name="ic-lora-type"]:checked').value;
+            const conditioningPath = document.getElementById('ic-lora-preview-img').dataset.conditioning;
+            if (!conditioningPath) throw new Error(_t('icLoraNoConditioning') || 'Please extract conditioning first');
+            
+            const strength = parseFloat(document.getElementById('ic-lora-strength').value) || 1.0;
+            const steps = parseInt(document.getElementById('ic-lora-steps').value) || 30;
+            const res = updateResPreview();
+            const dur = parseFloat(document.getElementById('vid-duration').value);
+            const fps = document.getElementById('vid-fps').value;
+            
+            endpoint = '/api/ic-lora/generate';
+            payload = {
+                video_path: videoPath,
+                conditioning_type: conditioningType,
+                prompt: effectivePrompt,
+                conditioning_strength: strength,
+                num_inference_steps: steps,
+                cfg_guidance_scale: 1.0,
+                negative_prompt: getNegativePrompt(),
+                resolution: res,
+                duration: String(dur),
+                fps: fps,
+                aspectRatio: document.getElementById('vid-ratio').value
+            };
+            label = `[ic-lora ${conditioningType}] ${effectivePrompt.slice(0, 40)}`;
+            
+        } else if (currentMode === 'retake') {
+            const videoPath = document.getElementById('retake-video-path').value;
+            if (!videoPath) throw new Error(_t('retakeNoVideo') || 'Please select a video for retake');
+            
+            const startTime = parseFloat(document.getElementById('retake-start-time').value) || 0;
+            const duration = parseFloat(document.getElementById('retake-duration').value) || 2;
+            const mode = document.querySelector('input[name="retake-mode"]:checked').value;
+            const retakePrompt = document.getElementById('retake-prompt').value.trim();
+            
+            if (!validateRetakeTime()) {
+                throw new Error(_t('retakeTimeError') || 'Invalid time range');
+            }
+            
+            endpoint = '/api/retake';
+            payload = {
+                video_path: videoPath,
+                start_time: startTime,
+                duration: duration,
+                prompt: retakePrompt || effectivePrompt,
+                mode: mode
+            };
+            label = `[retake ${mode}] ${videoPath.split(/[/\\]/).pop()}`;
         }
 
         return { endpoint, payload, label };
@@ -2848,3 +2917,199 @@ window.addEventListener('DOMContentLoaded', () => switchMode('video'));
         }
         startHistoryAutoRefresh();
     });
+
+    // ==================== IC-LoRA Functions ====================
+    function handleIcLoraVideoUpload(file) {
+        if (!file) return;
+        const zone = document.getElementById('ic-lora-video-drop-zone');
+        const placeholder = document.getElementById('ic-lora-video-placeholder');
+        const status = document.getElementById('ic-lora-video-status');
+        const filename = document.getElementById('ic-lora-video-filename');
+        const clearBtn = document.getElementById('clear-ic-lora-video-overlay');
+        
+        zone.classList.add('uploading');
+        
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            const base64 = e.target.result;
+            try {
+                const res = await fetch(`${BASE}/api/system/upload-image`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({image: base64, filename: file.name})
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    document.getElementById('ic-lora-video-path').value = data.path;
+                    placeholder.style.display = 'none';
+                    filename.textContent = file.name;
+                    status.style.display = 'flex';
+                    clearBtn.style.display = 'flex';
+                    addLog('✅ ' + (_t('icLoraVideoUploaded') || `IC-LoRA video uploaded: ${file.name}`));
+                } else {
+                    throw new Error(data.error || 'Upload failed');
+                }
+            } catch (err) {
+                addLog('❌ ' + (_t('icLoraVideoUploadFailed') || 'Video upload failed') + ': ' + err.message);
+                clearIcLoraVideo();
+            } finally {
+                zone.classList.remove('uploading');
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+    
+    function clearIcLoraVideo() {
+        document.getElementById('ic-lora-video-path').value = '';
+        document.getElementById('ic-lora-video-input').value = '';
+        document.getElementById('ic-lora-video-placeholder').style.display = 'block';
+        document.getElementById('ic-lora-video-status').style.display = 'none';
+        document.getElementById('clear-ic-lora-video-overlay').style.display = 'none';
+        document.getElementById('ic-lora-preview-container').style.display = 'none';
+        document.getElementById('ic-lora-gen-settings').style.display = 'none';
+        document.getElementById('ic-lora-preview-img').src = '';
+    }
+    
+    function onIcLoraTypeChange() {
+        // Reset preview when type changes
+        document.getElementById('ic-lora-preview-container').style.display = 'none';
+        document.getElementById('ic-lora-gen-settings').style.display = 'none';
+    }
+    
+    async function extractIcLoraConditioning() {
+        const videoPath = document.getElementById('ic-lora-video-path').value;
+        if (!videoPath) {
+            alert(_t('icLoraNoVideo') || 'Please upload a video first');
+            return;
+        }
+        
+        const type = document.querySelector('input[name="ic-lora-type"]:checked').value;
+        const frameTime = parseFloat(document.getElementById('ic-lora-frame-time').value) || 0;
+        
+        const btn = document.getElementById('ic-lora-extract-btn');
+        const originalText = btn.textContent;
+        btn.textContent = _t('icLoraExtracting') || 'Extracting...';
+        btn.disabled = true;
+        
+        try {
+            const res = await fetch(`${BASE}/api/ic-lora/extract`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    video_path: videoPath,
+                    conditioning_type: type,
+                    frame_time: frameTime
+                })
+            });
+            
+            const data = await res.json();
+            if (data.status === 'complete' || data.conditioning) {
+                document.getElementById('ic-lora-preview-container').style.display = 'block';
+                document.getElementById('ic-lora-gen-settings').style.display = 'block';
+                // Store conditioning data for generation
+                document.getElementById('ic-lora-preview-img').dataset.conditioning = data.conditioning || '';
+                document.getElementById('ic-lora-preview-img').dataset.original = data.original || '';
+                addLog('✅ ' + (_t('icLoraExtracted') || 'Conditioning extracted successfully'));
+            } else {
+                throw new Error(data.error || 'Extraction failed');
+            }
+        } catch (err) {
+            addLog('❌ ' + (_t('icLoraExtractFailed') || 'Extraction failed') + ': ' + err.message);
+        } finally {
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    }
+    
+    // ==================== Retake Functions ====================
+    let _retakeVideoCache = [];
+    
+    async function refreshRetakeVideoList() {
+        const select = document.getElementById('retake-video-select');
+        const currentVal = select.value;
+        
+        try {
+            const res = await fetch(`${BASE}/api/system/history?page=1&limit=50`);
+            const data = await res.json();
+            
+            if (data.status === 'success' && data.history) {
+                _retakeVideoCache = data.history.filter(h => h.type === 'video');
+                
+                // Keep first option (placeholder)
+                const placeholder = select.options[0];
+                select.innerHTML = '';
+                select.appendChild(placeholder);
+                
+                _retakeVideoCache.forEach(video => {
+                    const option = document.createElement('option');
+                    option.value = video.fullpath;
+                    option.textContent = video.filename;
+                    select.appendChild(option);
+                });
+                
+                // Restore selection if still valid
+                if (currentVal) {
+                    select.value = currentVal;
+                }
+            }
+        } catch (e) {
+            console.error('Failed to refresh retake video list:', e);
+        }
+    }
+    
+    function onRetakeVideoSelect() {
+        const select = document.getElementById('retake-video-select');
+        const path = select.value;
+        const info = document.getElementById('retake-info');
+        const durationEl = document.getElementById('retake-video-duration');
+        
+        document.getElementById('retake-video-path').value = path;
+        
+        if (path) {
+            const video = _retakeVideoCache.find(v => v.fullpath === path);
+            if (video) {
+                info.style.display = 'block';
+                // We'll get duration from the video element when played
+                durationEl.textContent = _t('retakeUnknownDuration') || 'Unknown';
+            }
+        } else {
+            info.style.display = 'none';
+        }
+    }
+    
+    function validateRetakeTime() {
+        const start = parseFloat(document.getElementById('retake-start-time').value) || 0;
+        const duration = parseFloat(document.getElementById('retake-duration').value) || 2;
+        const error = document.getElementById('retake-time-error');
+        const path = document.getElementById('retake-video-path').value;
+        
+        if (!path) {
+            error.style.display = 'none';
+            return true;
+        }
+        
+        // Get video duration from a hidden video element or cache
+        // For now, we assume max 120 seconds or check from selected video metadata
+        const video = _retakeVideoCache.find(v => v.fullpath === path);
+        let maxDuration = 120; // Default max
+        
+        if (start + duration > maxDuration) {
+            error.style.display = 'block';
+            return false;
+        } else {
+            error.style.display = 'none';
+            return true;
+        }
+    }
+    
+    function onRetakeModeChange() {
+        const mode = document.querySelector('input[name="retake-mode"]:checked').value;
+        const promptContainer = document.getElementById('retake-prompt-container');
+        
+        // Show prompt only for video replacement modes
+        if (mode === 'replace_video' || mode === 'replace_audio_and_video') {
+            promptContainer.style.display = 'block';
+        } else {
+            promptContainer.style.display = 'none';
+        }
+    }

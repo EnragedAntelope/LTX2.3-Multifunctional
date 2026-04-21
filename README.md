@@ -47,6 +47,8 @@ A bilingual (English/Chinese) UI wrapper and feature extension layer for **LTX D
 | **Multi-GPU switching** | Select which CUDA device to use |
 | **Start / end frame** | Image-to-video with custom start and/or end frames |
 | **Batch keyframe generation** | Two modes: latent-space insertion or independent segment stitching |
+| **IC-LoRA conditioning** | Extract Canny/Depth from video and generate with style-consistent conditioning |
+| **Retake / Segment replace** | Replace specific time segments in existing videos (video/audio/both) |
 | **LM Studio prompt enhancement** | Enhance prompts locally via a running LM Studio instance |
 | **Local text encoder toggle** | Force local Gemma encoder instead of LTX API encoding |
 | **Bilingual UI** | Full English / Chinese interface, switch at runtime |
