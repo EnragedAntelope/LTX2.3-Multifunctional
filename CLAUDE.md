@@ -127,7 +127,7 @@ The `should_use_local_encoding()` method on `TextHandler` decides which path to 
 
 ## LTX Desktop Version Compatibility
 
-**Currently supported version: LTX Desktop v1.0.4** (backend `pyproject.toml` version `1.0.0`)
+**Currently supported version: LTX Desktop v1.0.5** (backend `pyproject.toml` version `1.0.0` — unchanged from v1.0.4)
 
 **At the start of every session working on this repo**, check the latest LTX Desktop release at:
 
@@ -143,7 +143,7 @@ To check the version installed on this machine, read:
 
 Where `BACKEND_DIR` = `%LOCALAPPDATA%\Programs\LTX Desktop\resources\backend\pyproject.toml`.
 
-The currently expected backend version is `1.0.0` (corresponding to LTX Desktop v1.0.4). If the installed version differs, audit the diff before making any other changes. `main.py` will print a warning at startup if a version mismatch is detected.
+The currently expected backend version is `1.0.0` (corresponding to LTX Desktop v1.0.5). If the installed version differs, audit the diff before making any other changes. `main.py` will print a warning at startup if a version mismatch is detected.
 
 Then verify our patches are still compatible:
 - Confirm all official routers we import in `app_factory.py` still exist under `_routes/`
@@ -157,7 +157,7 @@ If the version has bumped, audit the diff before making any other changes.
 
 | LTX Desktop version | Workaround | Location | Recheck when |
 |---|---|---|---|
-| ≤ 1.0.4 (current) | `ltx_pipelines.retake_pipeline` doesn't exist — `ltx_text_encoder._install_cleanup_memory_patch` logs a warning trying to import it. We inject a no-op stub into `sys.modules` to suppress the warning. | `patches/app_factory.py` top of file | Next LTX Desktop release — if the module ships, remove the stub. |
+| ≤ 1.0.5 (current) | `ltx_pipelines.retake_pipeline` doesn't exist — `ltx_text_encoder._install_cleanup_memory_patch` logs a warning trying to import it. We inject a no-op stub into `sys.modules` to suppress the warning. | `patches/app_factory.py` top of file | Next LTX Desktop release — if the module ships, remove the stub. |
 
 ## Coding Conventions
 
@@ -283,6 +283,34 @@ Addressed several issues surfaced by console-output review:
 - **Warmup output file cleanup** — When the warmup does run, `_warmup_fast.mp4` is deleted from the outputs dir immediately after the pipeline is unloaded.
 - **Dead code removed from `patches/handlers/video_generation_handler.py`** — `generate()`, `generate_video()`, `_generate_a2v()`, `_generate_forced_api()`, and related helpers were never reachable (all replaced by monkey-patches in `app_factory.py`). Replaced with stub methods that raise `NotImplementedError` so static analysis still sees the correct shape. Kept only `_prepare_image` and `_resolve_seed`, which the patches do call.
 
+### LTX Desktop v1.0.5 Update (done 2026-04-29)
+
+Updated support from v1.0.4 to v1.0.5. Full audit of release notes completed:
+
+**LTX Desktop 1.0.5 Changes:**
+- Bug fixes: macOS ffmpeg, 11 video editor regressions, settings UI, API error messages
+- Performance: VRAM optimization threshold changed from <16GB → <32GB (fixes regression on high-VRAM GPUs)
+- A2V: Local generations no longer restricted to landscape aspect ratio — both 16:9 and 9:16 now work
+- Text encoder: Download UI shows progress bar (was misleading before)
+- Settings: Removed configurations not connected to any functionality
+
+**Impact on Wrapper:**
+- **Patches**: NO IMPACT — our PYTHONPATH overrides are independent of official VRAM optimization code path
+- **UI**: NO IMPACT — video editor fixes are Electron-layer only, our web UI unaffected
+- **Settings**: LOW RISK — removed configs were obscure, not core settings we depend on
+- **A2V**: FREE IMPROVEMENT — our UI already supports both aspect ratios, now works on backend too
+- **Custom text encoder**: STILL NOT AVAILABLE — only UI progress bar change, no backend support for custom encoder paths
+- **retake_pipeline**: STILL DOES NOT EXIST — keep stub injection in app_factory.py
+
+**Files Updated:**
+- `main.py`: SUPPORTED_DESKTOP_VERSION → "v1.0.5", EXPECTED_BACKEND_VERSION remains "1.0.0"
+- `README.md`: All v1.0.4 references → v1.0.5, download link updated
+- `CLAUDE.md`: Version compatibility section, workarounds table updated to ≤ 1.0.5
+
+**Testing Notes:**
+- Full functional QA requires manual install of v1.0.5 (large download ~several GB)
+- All 16 test checklist items should pass identically to v1.0.4
+- A2V with 9:16 aspect ratio should now work (was restricted to 16:9 before)
 ## Future Work (Do Not Implement Yet — Log Only)
 
 ### 1. Rewrite README (done 2026-04-06)
@@ -308,6 +336,7 @@ Both features were implemented and then removed (2026-04-10) because alternative
 - `base_encoder.py` → `module_ops_from_gemma_root()`: does it gain HuggingFace tokenizer support (falling back to `tokenizer.json` if `tokenizer.model` absent)?
 - `app_settings.py`: new fields like `text_encoder_path` or `text_encoder_model`?
 
+**Rechecked at LTX Desktop v1.0.5 (2026-04-29):** Still no custom text encoder support. The release notes only mention "Text encoder download showed a misleading UI — replaced with an accurate progress bar" — this is a UI-only change, not backend support for custom encoders. The conditions above remain unmet.
 If the backend adds an official path for custom encoder directories, re-expose:
 1. Custom encoder directory input (Browse/Save) in the Settings panel
 2. `GET/POST /api/text-encoder-path` endpoints in `app_factory.py`
@@ -321,5 +350,7 @@ Currently the backend hardcodes one local text encoder: `gemma-3-12b-it-qat-q4_0
 - `text_handler.py` → `resolve_gemma_root()`: does it accept a path or model-type parameter instead of always resolving the single spec?
 - `app_settings.py`: do new fields appear alongside `use_local_text_encoder` (e.g., `text_encoder_model`, `text_encoder_path`)?
 - Any new `TextEncoderStatus` enum values beyond binary local/API?
+
+**Rechecked at LTX Desktop v1.0.5 (2026-04-29):** Still only one hardcoded local encoder (`gemma-3-12b-it-qat-q4_0-unquantized`). No new fields in `model_download_specs.py`, `text_handler.py`, or `app_settings.py`. Custom encoder selection remains unavailable.
 
 When these signals appear, expose encoder selection in the UI (Settings panel, same area as the current local encoder toggle).

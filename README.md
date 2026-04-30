@@ -12,17 +12,16 @@ A bilingual (English/Chinese) UI wrapper and feature extension layer for **LTX D
 
 - **OS**: Windows (LTX Desktop is Windows-only)
 - **VRAM**: 12 GB minimum. 24 GB recommended for longer videos.
-- **LTX Desktop**: exactly **v1.0.4** — [Download v1.0.4](https://github.com/Lightricks/LTX-Desktop/releases/tag/v1.0.4)
+- **LTX Desktop**: exactly **v1.0.5** — [Download v1.0.5](https://github.com/Lightricks/LTX-Desktop/releases/tag/v1.0.5)
 
-> **Version lock**: This wrapper is tested against LTX Desktop v1.0.4. Do not install a newer version until this repo explicitly supports it — newer versions may have breaking backend changes.
->
-> **版本锁定**：此工具仅在 LTX Desktop v1.0.4 下测试通过。请勿安装更新版本，除非本项目明确声明支持。
+> **Version lock**: This wrapper is tested against LTX Desktop v1.0.5. Do not install a newer version until this repo explicitly supports it — newer versions may have breaking backend changes.
+> **版本锁定**：此工具仅在 LTX Desktop v1.0.5 下测试通过。请勿安装更新版本，除非本项目明确声明支持。
 
 ---
 
 ## Installation / 安装
 
-1. Install **LTX Desktop v1.0.4** from the [v1.0.4 release page](https://github.com/Lightricks/LTX-Desktop/releases/tag/v1.0.4)
+1. Install **LTX Desktop v1.0.5** from the [v1.0.5 release page](https://github.com/Lightricks/LTX-Desktop/releases/tag/v1.0.5)
 2. Copy the LTX Desktop shortcut into the `LTX_Shortcut/` folder in this repo
 3. Run `run.bat`
 4. Open `http://localhost:4000` in your browser

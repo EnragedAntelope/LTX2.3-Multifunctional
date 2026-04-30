@@ -69,8 +69,8 @@ UI_FILE_NAME = "UI/index.html"
 
 def _check_ltx_version(backend_dir):
     """Warn if the installed LTX Desktop backend version doesn't match what this wrapper supports."""
-    EXPECTED_BACKEND_VERSION = "1.0.0"  # corresponds to LTX Desktop v1.0.4
-    SUPPORTED_DESKTOP_VERSION = "v1.0.4"
+    EXPECTED_BACKEND_VERSION = "1.0.0"  # corresponds to LTX Desktop v1.0.5 (backend unchanged from v1.0.4)
+    SUPPORTED_DESKTOP_VERSION = "v1.0.5"
     pyproject = os.path.join(backend_dir, "pyproject.toml")
     if not os.path.exists(pyproject):
         return
