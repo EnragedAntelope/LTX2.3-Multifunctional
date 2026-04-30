@@ -1,9 +1,4 @@
-"""Pydantic request/response models and typed aliases for ltx2_server.
-
-This file shadows the official api_types.py via PYTHONPATH priority.
-It mirrors the official module's exports so that all backend imports resolve,
-while overriding GenerateVideoRequest with our custom fields and loose types.
-"""
+"""Pydantic request/response models and typed aliases for ltx2_server."""
 
 from __future__ import annotations
 
@@ -13,17 +8,17 @@ from typing import Literal, NamedTuple, TypeAlias, TypedDict
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 NonEmptyPrompt = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-ModelFileType = Literal[
-    "checkpoint",
-    "upsampler",
-    "distilled_lora",
-    "ic_lora",
-    "depth_processor",
-    "person_detector",
-    "pose_processor",
-    "text_encoder",
-    "zit",
+ModelCheckpointID = Literal[
+    "ltx-2.3-22b-distilled",
+    "ltx-2.3-spatial-upscaler-x2-1.0",
+    "ltx-2.3-22b-ic-lora-union-control-ref0.5",
+    "dpt-hybrid-midas",
+    "yolox-l-torchscript",
+    "dw-ll-ucoco-384-bs5",
+    "gemma-3-12b-it-qat-q4_0-unquantized",
+    "z-image-turbo",
 ]
+LTXLocalModelId = Literal["ltx-2.3-22b-distilled"]
 
 
 class ImageConditioningInput(NamedTuple):
@@ -32,23 +27,6 @@ class ImageConditioningInput(NamedTuple):
     path: str
     frame_idx: int
     strength: float
-
-
-# ============================================================
-# TypedDicts for module-level state globals (custom addition)
-# ============================================================
-
-
-class GenerationState(TypedDict):
-    id: str | None
-    cancelled: bool
-    result: str | list[str] | None
-    error: str | None
-    status: str  # "idle" | "running" | "complete" | "cancelled" | "error"
-    phase: str
-    progress: int
-    current_step: int
-    total_steps: int
 
 
 JsonObject: TypeAlias = dict[str, object]
@@ -66,7 +44,7 @@ VideoCameraMotion = Literal[
 
 
 # ============================================================
-# Response Models (matching official split-class pattern)
+# Response Models
 # ============================================================
 
 
@@ -113,53 +91,15 @@ class GenerationProgressResponse(BaseModel):
     totalSteps: int | None
 
 
-class ModelInfo(BaseModel):
-    id: str
-    name: str
-    description: str
-
-
-class ModelFileStatus(BaseModel):
-    id: ModelFileType
-    name: str
-    description: str
-    downloaded: bool
-    size: int
-    expected_size: int
-    required: bool = True
-    is_folder: bool = False
-    optional_reason: str | None = None
-
-
-class TextEncoderStatus(BaseModel):
-    downloaded: bool
-    size_bytes: int
-    size_gb: float
-    expected_size_gb: float
-
-
-class ModelsStatusResponse(BaseModel):
-    models: list[ModelFileStatus]
-    all_downloaded: bool
-    total_size: int
-    downloaded_size: int
-    total_size_gb: float
-    downloaded_size_gb: float
-    models_path: str
-    has_api_key: bool
-    text_encoder_status: TextEncoderStatus
-    use_local_text_encoder: bool
-
-
 class DownloadProgressRunningResponse(BaseModel):
     status: Literal["downloading"]
-    current_downloading_file: ModelFileType | None
+    current_downloading_file: ModelCheckpointID | None
     current_file_progress: float
     total_progress: float
     total_downloaded_bytes: int
     expected_total_bytes: int
-    completed_files: set[ModelFileType]
-    all_files: set[ModelFileType]
+    completed_files: set[ModelCheckpointID]
+    all_files: set[ModelCheckpointID]
     error: None = None
     speed_bytes_per_sec: float
 
@@ -236,9 +176,6 @@ class RetakeCancelledResponse(BaseModel):
 RetakeResponse: TypeAlias = RetakeVideoResponse | RetakePayloadResponse | RetakeCancelledResponse
 
 
-ConditioningType: TypeAlias = Literal["canny", "depth"]
-
-
 class IcLoraExtractResponse(BaseModel):
     conditioning: str
     original: str
@@ -258,33 +195,82 @@ class IcLoraGenerateCancelledResponse(BaseModel):
 IcLoraGenerateResponse: TypeAlias = IcLoraGenerateCompleteResponse | IcLoraGenerateCancelledResponse
 
 
+# ============================================================
+# HuggingFace auth
+# ============================================================
+
+
+class HuggingFaceLoginResponse(BaseModel):
+    client_id: str
+    redirect_uri: str
+    scope: str
+    state: str
+    code_challenge: str
+    code_challenge_method: str
+
+
+class HuggingFaceAuthStatusResponse(BaseModel):
+    status: Literal["authenticated", "pending", "not_authenticated"]
+
+
+class HuggingFaceLogoutResponse(BaseModel):
+    status: Literal["logged_out"]
+
+
 class ModelDownloadStartResponse(BaseModel):
     status: Literal["started"]
     message: str
     sessionId: str
 
 
-class TextEncoderDownloadStartedResponse(BaseModel):
-    status: Literal["started"]
-    message: str
-    sessionId: str
+class LtxDownloadRecommendationResponse(BaseModel):
+    status: Literal["download"]
+    cps_to_download: list[ModelCheckpointID]
 
 
-class TextEncoderAlreadyDownloadedResponse(BaseModel):
-    status: Literal["already_downloaded"]
-    message: str
+class LtxUpgradeRecommendationResponse(BaseModel):
+    status: Literal["upgrade"]
+    ltx_model_id: LTXLocalModelId
+    upgrade_message: str | None = None
+    cps_to_download: list[ModelCheckpointID]
+    cps_to_delete: list[ModelCheckpointID]
 
 
-TextEncoderDownloadResponse: TypeAlias = TextEncoderDownloadStartedResponse | TextEncoderAlreadyDownloadedResponse
+class LtxOkRecommendationResponse(BaseModel):
+    status: Literal["ok"]
+
+
+LtxRecommendationResponse: TypeAlias = (
+    LtxDownloadRecommendationResponse | LtxUpgradeRecommendationResponse | LtxOkRecommendationResponse
+)
+
+
+class ImageGenRecommendationResponse(BaseModel):
+    cp_to_download: ModelCheckpointID | None
+
+
+class LtxIcLoraRecommendationResponse(BaseModel):
+    cps_to_download: list[ModelCheckpointID]
+
+
+class TextEncoderRecommendationResponse(BaseModel):
+    cp_to_download: ModelCheckpointID | None
+    expected_size_bytes: int
+    expected_size_gb: float
 
 
 class StatusResponse(BaseModel):
     status: str
 
 
-class ErrorResponse(BaseModel):
-    error: str
-    message: str | None = None
+class HTTPErrorResponse(BaseModel):
+    code: str
+    message: str
+
+
+class LtxInsufficientFundsErrorResponse(BaseModel):
+    code: Literal["LTX_INSUFFICIENT_FUNDS"]
+    message: str
 
 
 # ============================================================
@@ -292,33 +278,46 @@ class ErrorResponse(BaseModel):
 # ============================================================
 
 
-VideoResolution: TypeAlias = Literal["540p", "720p", "1080p", "1440p", "2160p"]
-VideoModel: TypeAlias = Literal["fast", "pro"]
+LTXVideoGenResolution: TypeAlias = Literal["540p", "720p", "1080p", "1440p", "2160p"]
+LTXVideoGenDuration: TypeAlias = Literal[5, 6, 8, 10, 12, 14, 16, 18, 20]
+LTXVideoGenFps: TypeAlias = Literal[24, 25, 48, 50]
+LTXVideoGenPipeline: TypeAlias = Literal["fast", "pro"]
 
 
-# CUSTOM OVERRIDE: Our GenerateVideoRequest uses loose types (str for duration/fps/audio)
-# and includes extra fields (loraPath, startFramePath, etc.) that the official version lacks.
-# The official version uses strict=True with int/bool fields, which would reject our frontend payloads.
-class GenerateVideoRequest(BaseModel):
+class LTXVideoGenerationResolutionSpec(BaseModel):
+    fps_to_durations: dict[LTXVideoGenFps, list[LTXVideoGenDuration]]
+
+
+class LTXVideoGenerationSpec(BaseModel):
+    display_name: str
+    supported_resolutions_durations: dict[LTXVideoGenResolution, LTXVideoGenerationResolutionSpec]
+    a2v_supported_resolutions_durations: dict[LTXVideoGenResolution, LTXVideoGenerationResolutionSpec] | None = None
+
+
+class LTXVideoGenerationModelSpecItem(BaseModel):
+    pipeline: LTXVideoGenPipeline
+    spec: LTXVideoGenerationSpec
+
+
+class GenerateVideoModelsSpecsResponse(BaseModel):
+    local_models: list[LTXVideoGenerationModelSpecItem]
+    api_models: list[LTXVideoGenerationModelSpecItem]
+
+
+class _OfficialGenerateVideoRequest(BaseModel):  # Replaced by our override
+    model_config = ConfigDict(strict=True)
+
     prompt: NonEmptyPrompt
-    resolution: str = "512p"
-    model: str = "fast"
+    resolution: LTXVideoGenResolution = "1080p"
+    model: LTXVideoGenPipeline = "fast"
     cameraMotion: VideoCameraMotion = "none"
     negativePrompt: str = ""
-    duration: str = "2"
-    fps: str = "24"
-    audio: str = "false"
+    duration: LTXVideoGenDuration = 5
+    fps: LTXVideoGenFps = 24
+    audio: bool = False
     imagePath: str | None = None
     audioPath: str | None = None
-    startFramePath: str | None = None
-    endFramePath: str | None = None
-    keyframePaths: list[str] | None = None
-    keyframeStrengths: list[float] | None = None
-    keyframeTimes: list[float] | None = None
     aspectRatio: Literal["16:9", "9:16"] = "16:9"
-    modelPath: str | None = None
-    loraPath: str | None = None
-    loraStrength: float = 1.0
 
 
 class GenerateImageRequest(BaseModel):
@@ -331,16 +330,28 @@ class GenerateImageRequest(BaseModel):
     numImages: int = Field(default=1, ge=1)
 
 
-def _default_model_types() -> set[ModelFileType]:
+def _default_model_types() -> set[ModelCheckpointID]:
     return set()
 
 
 class ModelDownloadRequest(BaseModel):
-    modelTypes: set[ModelFileType] = Field(default_factory=_default_model_types)
+    type: Literal["download", "upgrade"] = "download"
+    cp_ids: set[ModelCheckpointID] = Field(default_factory=_default_model_types)
 
 
-class RequiredModelsResponse(BaseModel):
-    modelTypes: list[ModelFileType]
+ModelAccessStatus: TypeAlias = Literal["authorized", "not_authorized"]
+
+
+class CheckModelAccessRequest(BaseModel):
+    cp_ids: set[ModelCheckpointID] = Field(default_factory=_default_model_types)
+
+
+class CheckModelAccessResponse(BaseModel):
+    access: dict[str, ModelAccessStatus]
+
+
+class ModelDeleteRequest(BaseModel):
+    cp_ids: set[ModelCheckpointID] = Field(default_factory=_default_model_types)
 
 
 GapPromptMode: TypeAlias = Literal["text-to-video", "image-to-video", "text-to-image"]
@@ -377,6 +388,9 @@ class RetakeRequest(BaseModel):
     mode: RetakeMode = "replace_audio_and_video"
 
 
+ConditioningType: TypeAlias = Literal["canny", "depth"]
+
+
 class IcLoraExtractRequest(BaseModel):
     model_config = ConfigDict(strict=True)
 
@@ -407,3 +421,64 @@ class IcLoraGenerateRequest(BaseModel):
     cfg_guidance_scale: float = 1.0
     negative_prompt: str = ""
     images: list[IcLoraImageInput] = Field(default_factory=_default_ic_lora_images)
+
+
+
+
+# ============================================================
+# CUSTOM OVERRIDES FOR LTX2.3-Multifunctional Wrapper
+# ============================================================
+
+
+class GenerationState(TypedDict):
+    """Our custom state tracking - not in official module."""
+    id: str | None
+    cancelled: bool
+    result: str | list[str] | None
+    error: str | None
+    status: str  # "idle" | "running" | "complete" | "cancelled" | "error"
+    phase: str
+    progress: int
+    current_step: int
+    total_steps: int
+
+
+# Override GenerateVideoRequest with loose types for web frontend compatibility
+# The official version uses strict=True which rejects our string-to-number coercions
+
+class GenerateVideoRequest(BaseModel):
+    """Custom override with loose types + extra fields for LTX2.3-Multifunctional."""
+    model_config = ConfigDict(extra="allow")  # Allow inferenceSteps and other extra fields
+
+    prompt: str
+    resolution: str = "512p"
+    model: str = "fast"
+    cameraMotion: VideoCameraMotion = "none"
+    negativePrompt: str = ""
+    duration: str = "2"  # Loose: official uses int
+    fps: str = "24"  # Loose: official uses int
+    audio: str = ""  # Loose: official uses bool
+    imagePath: str | None = None
+    audioPath: str | None = None
+    startFramePath: str | None = None
+    endFramePath: str | None = None
+    keyframePaths: list[str] = Field(default_factory=list)
+    keyframeStrengths: list[float] = Field(default_factory=list)
+    keyframeTimes: list[float] = Field(default_factory=list)
+    aspectRatio: str = "16:9"
+    modelPath: str | None = None
+    loraPath: str | None = None
+    loraStrength: str = "1.0"  # Loose: official uses float
+
+    @model_validator(mode="after")
+    def _validate_keyframes(self) -> "GenerateVideoRequest":
+        n = len(self.keyframePaths)
+        if len(self.keyframeStrengths) != n:
+            raise ValueError(
+                f"keyframeStrengths length ({len(self.keyframeStrengths)}) != keyframePaths length ({n})"
+            )
+        if len(self.keyframeTimes) != n:
+            raise ValueError(
+                f"keyframeTimes length ({len(self.keyframeTimes)}) != keyframePaths length ({n})"
+            )
+        return self
