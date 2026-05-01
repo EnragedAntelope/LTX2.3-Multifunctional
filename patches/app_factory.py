@@ -1649,7 +1649,7 @@ def create_app(
                     else:
                         try:
                             logger.info("[PATCH] LoRA warmup: priming cache on %.0f GB VRAM system", _vram_gb)
-                            self._pipelines.load_gpu_pipeline("fast", should_warm=True)
+                            self._pipelines.load_gpu_pipeline("fast")
                             from keep_models_runtime import force_unload_gpu_pipeline
                             force_unload_gpu_pipeline(self._pipelines)
                             # Clean up the warmup video that should_warm=True generates in outputs dir
@@ -1751,7 +1751,7 @@ def create_app(
                     try_sequential_offload_on_pipeline_state(pipeline_state)
             else:
                 logger.info("[PATCH] Loading Fast pipeline (no LoRA)")
-                pipeline_state = self._pipelines.load_gpu_pipeline("fast", should_warm=False)
+                pipeline_state = self._pipelines.load_gpu_pipeline("fast")
             self._pipelines._pipeline_signature = desired_sig
             num_inference_steps = None
             extra_loras_for_hook = tuple(loras) if loras else None
