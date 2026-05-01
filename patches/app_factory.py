@@ -1695,7 +1695,6 @@ def create_app(
                 from state.app_state_types import (
                     GpuSlot,
                     VideoPipelineState,
-                    VideoPipelineWarmth,
                 )
 
                 checkpoint_path = str(
@@ -1735,7 +1734,6 @@ def create_app(
                         pass
                 pipeline_state = VideoPipelineState(
                     pipeline=ltx_pipe,
-                    warmth=VideoPipelineWarmth.COLD,
                     is_compiled=False,
                 )
                 self._pipelines.state.gpu_slot = GpuSlot(
