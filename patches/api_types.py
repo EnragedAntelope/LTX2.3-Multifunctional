@@ -468,7 +468,7 @@ class GenerateVideoRequest(BaseModel):
     aspectRatio: str = "16:9"
     modelPath: str | None = None
     loraPath: str | None = None
-    loraStrength: str = "1.0"  # Loose: official uses float
+    loraStrength: float = 1.0  # Frontend sends parseFloat(), backend converts to float
 
     @model_validator(mode="after")
     def _validate_keyframes(self) -> "GenerateVideoRequest":
