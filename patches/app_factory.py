@@ -1709,6 +1709,7 @@ def create_app(
                         "ltx-2.3-spatial-upscaler-x2-1.0",
                     )
                 )
+                from runtime_config.runtime_policy import streaming_prefetch_count_for_mode
                 from lora_injection import (
                     _lora_init_kwargs,
                     inject_loras_into_fast_pipeline,
@@ -1720,6 +1721,9 @@ def create_app(
                     gemma_root,
                     upsampler_path,
                     self._pipelines.config.device,
+                    streaming_prefetch_count_for_mode(
+                        self._pipelines.config.local_generations_mode
+                    ),
                     **lora_kw,
                 )
                 n_inj = inject_loras_into_fast_pipeline(ltx_pipe, loras)
