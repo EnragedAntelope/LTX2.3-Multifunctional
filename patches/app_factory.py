@@ -1700,15 +1700,13 @@ def create_app(
                 checkpoint_path = str(
                     resolve_model_path(
                         self._pipelines.models_dir,
-                        self._pipelines.config.model_download_specs,
-                        "checkpoint",
+                        "ltx-2.3-22b-distilled",
                     )
                 )
                 upsampler_path = str(
                     resolve_model_path(
                         self._pipelines.models_dir,
-                        self._pipelines.config.model_download_specs,
-                        "upsampler",
+                        "ltx-2.3-spatial-upscaler-x2-1.0",
                     )
                 )
                 from lora_injection import (
